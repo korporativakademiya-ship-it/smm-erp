@@ -457,8 +457,15 @@ function onTime(t){return t&&t.doneAt&&t.deadline&&t.doneAt<=t.deadline;}
 const PART_STAGE={Ssenariy:'Ssenariy',Syomka:'Syomka',Montaj:'Montaj',Dizayn:'Montaj',Joylash:'Tayyor'};
 function chainForFormat(fmt){const video=/reels|video|youtube|tiktok|montaj|klip/i.test(fmt||'');
   return video?['Ssenariy','Syomka','Montaj','Joylash']:['Dizayn','Joylash'];}
-function assignForPart(part,d,p){                                   // ishlab chiqarish — mas'ul; Joylash — mas'ul (admin qayta biriktira oladi)
-  return d.responsibleId||(p&&p.team&&p.team[0])||'';}
+function assignForPart(part,d,p){                                   // rolga qarab biriktiradi (keyin qo'lda tahrirlash mumkin)
+  const team=((p&&p.team)||[]).map(id=>emp(id)).filter(Boolean);
+  const mob=team.find(e=>e.role==='mobilograf');
+  if((part==='Syomka'||part==='Montaj')&&mob)return mob.id;        // syomka/montaj — mobilografga
+  return d.responsibleId||(team[0]&&team[0].id)||'';}              // ssenariy/dizayn/joylash — mas'ul
+function approverOf(t){                                            // tasdiqlovchi: vazifani yaratgan; agar u bajaruvchining o'zi bo'lsa — admin
+  if(t.createdBy&&t.createdBy!==t.assigneeId)return t.createdBy;
+  const a=DB.employees.find(e=>e.role==='admin');return a?a.id:'';}
+function canApprove(t){return currentUser.id!==t.assigneeId&&(currentUser.role==='admin'||currentUser.id===approverOf(t));}
 function deriveContentStatus(c){
   if(c.platforms&&c.platforms.length&&c.platforms.every(pf=>c.published&&c.published[pf]))return 'Chop etilgan';
   let best=-1;(c.tasks||[]).forEach(t=>{if(t.status==='Tasdiqlandi'){const i=STATUSES.indexOf(PART_STAGE[t.part]||'');if(i>best)best=i;}});
@@ -667,8 +674,8 @@ function viewTask(tid){
 }
 function taskActions(t,c){
   const isMine=t.assigneeId===currentUser.id,mgr=currentUser.role==='admin'||currentUser.role==='smm';
-  const approver=emp(t.createdBy),apprName=approver?approver.name:'Admin';
-  const canAppr=currentUser.id!==t.assigneeId&&(currentUser.role==='admin'||currentUser.id===t.createdBy);
+  const approver=emp(approverOf(t)),apprName=approver?approver.name:'Admin';
+  const canAppr=canApprove(t);
   if(t.status==='Yangi')return (isMine||mgr)?`<div class="relation" style="margin-top:14px"><button class="btn" onclick="acceptTask('${t.id}')">✋ Qabul qildim</button><div class="hint">Qabul qilsangiz — «Jarayonda»ga o‘tadi.</div></div>`:`<div class="hint" style="margin-top:12px">Yangi vazifa — bajaruvchi qabul qilishi kutilmoqda.</div>`;
   if(t.status==='Jarayonda')return (isMine||mgr)?`<div class="relation" style="margin-top:14px"><div class="rl">Ishni topshirish</div><label>Bajarilgan ish havolasi</label><div class="flex"><input id="lnk_${t.id}" placeholder="https://..." value="${esc(t.link)}"><button class="btn" onclick="finishTask('${t.id}')">✓ Tugatdim</button></div><div class="hint">Tugatilgach «Tekshiruvda»ga o‘tadi. Tasdiqlovchi: <b>${apprName}</b>.</div></div>`:`<div class="hint" style="margin-top:12px">Vazifa jarayonda.</div>`;
   if(t.status==='Tekshiruvda')return canAppr?`<div class="relation" style="margin-top:14px"><div class="rl">Tekshiruv — tasdiqlovchi: ${apprName}</div>${t.link?`<div class="small" style="margin-bottom:8px">Ish: <a href="${t.link}" target="_blank">havola</a></div>`:''}<div class="flex" style="gap:8px"><button class="btn" onclick="approveTask('${t.id}')">✓ Tasdiqlayman</button><button class="btn danger" onclick="returnTask('${t.id}')">↩ Qaytarish</button></div></div>`:`<div class="hint" style="margin-top:12px">Tekshiruvda — <b>${apprName}</b> tasdiqlashi kutilmoqda.${isMine?' O‘z vazifangizni o‘zingiz tasdiqlay olmaysiz.':''}</div>`;
@@ -676,7 +683,7 @@ function taskActions(t,c){
 }
 function toggleCheck(tid,i){const f=findTask(tid);if(!f)return;f.t.checklist[i].done=!f.t.checklist[i].done;save();viewTask(tid);}
 function moveTask(tid,ns){const f=findTask(tid);if(!f)return false;const{c,t}=f;const isMine=currentUser.id===t.assigneeId,mgr=currentUser.role==='admin'||currentUser.role==='smm';
-  if(ns==='Tasdiqlandi'){if(!(currentUser.id!==t.assigneeId&&(currentUser.role==='admin'||currentUser.id===t.createdBy))){alert('Tasdiqlashga ruxsat yo‘q. Vazifani bajargan odam o‘zini tasdiqlay olmaydi — tasdiqlovchi vazifani yaratgan yoki admin.');return false;}}
+  if(ns==='Tasdiqlandi'){if(!canApprove(t)){alert('Tasdiqlashga ruxsat yo‘q. Vazifani bajargan odam o‘zini tasdiqlay olmaydi — tasdiqlovchi «'+((emp(approverOf(t))||{}).name||'Admin')+'» yoki admin.');return false;}}
   else if(!(isMine||mgr)){alert('Bu vazifani o‘zgartirishga ruxsatingiz yo‘q.');return false;}
   if(ns==='Tekshiruvda'&&!t.doneAt)t.doneAt=todayStr();
   if(ns==='Tasdiqlandi'){if(!t.doneAt)t.doneAt=todayStr();if(t.part==='Joylash'){if(t.platform)c.published[t.platform]=true;else c.platforms.forEach(p=>c.published[p]=true);}}
@@ -686,7 +693,7 @@ function acceptTask(tid){if(moveTask(tid,'Jarayonda')){viewTask(tid);refresh();}
 function finishTask(tid){const el=document.getElementById('lnk_'+tid);const link=el?el.value.trim():'';if(!link){alert('Iltimos, bajarilgan ish havolasini kiriting.');return;}const f=findTask(tid);if(f)f.t.link=link;if(moveTask(tid,'Tekshiruvda')){notify(f.t.createdBy,'🔎 Tasdiqingiz kutilmoqda: «'+f.t.title+'» topshirildi.');viewTask(tid);refresh();}}
 function approveTask(tid){const f=findTask(tid);if(moveTask(tid,'Tasdiqlandi')){if(f)notify(f.t.assigneeId,'✓ Vazifangiz tasdiqlandi: «'+f.t.title+'».');viewTask(tid);refresh();}}
 function reopenTask(tid){if(moveTask(tid,'Jarayonda')){viewTask(tid);refresh();}}
-function returnTask(tid){const f=findTask(tid);if(!f)return;const{t}=f;if(!(currentUser.id!==t.assigneeId&&(currentUser.role==='admin'||currentUser.id===t.createdBy))){alert('Qaytarishga ruxsat yo‘q.');return;}
+function returnTask(tid){const f=findTask(tid);if(!f)return;const{t}=f;if(!canApprove(t)){alert('Qaytarishga ruxsat yo‘q.');return;}
   rejectReason('Vazifani qaytarish sababi',reason=>{t.reworkCount=(t.reworkCount||0)+1;(t.reworkLog=t.reworkLog||[]).push({ts:new Date().toISOString(),by:currentUser.name,reason});if(moveTask(tid,'Jarayonda')){notify(t.assigneeId,'↩ Vazifa qaytarildi: «'+t.title+'». Sabab: '+(reason||'—'));viewTask(tid);refresh();}});}
 function dropTask(ev,ns){ev.preventDefault();const tid=ev.dataTransfer.getData('tid');document.querySelectorAll('.kcol').forEach(k=>k.classList.remove('drag'));if(tid&&moveTask(tid,ns))pageTasks();}
 function advanceTask(tid){const f=findTask(tid);if(!f)return;const s=f.t.status;
@@ -703,8 +710,8 @@ function editTask(tid){const f=findTask(tid);if(!f)return;const{t}=f;
 function saveTaskEdit(tid){const f=findTask(tid);if(!f)return;const{t}=f;t.title=v('et_title');t.part=v('et_part');t.assigneeId=v('et_ass');t.createdBy=v('et_by');t.deadline=v('et_dl');const ns=v('et_status');if(ns!=='Tasdiqlandi'&&t.status==='Tasdiqlandi')t.doneAt='';if(ns==='Tasdiqlandi'&&!t.doneAt)t.doneAt=todayStr();t.status=ns;save();viewTask(tid);refresh();}
 
 /* ============================================================ VAZIFALAR */
-let kDay=todayStr(),kAss='all',kMode='day';
-function scopeOwn(){return currentUser.role!=='admin'&&!!(DB.settings.scopeOwn&&DB.settings.scopeOwn[currentUser.role]);}
+let kDay=todayStr(),kAss='all',kMode='all';
+function scopeOwn(){return currentUser.role!=='admin';}   // admindan tashqari har kim faqat o'z ishini ko'radi
 function pageTasks(){
   const onlyMine=scopeOwn();
   const eO=['<option value="all">Barcha xodimlar</option>'].concat(DB.employees.filter(e=>e.role!=='admin'&&e.role!=='owner').map(e=>`<option value="${e.id}" ${kAss===e.id?'selected':''}>${e.name}</option>`)).join('');
@@ -1042,8 +1049,7 @@ function pageSettings(){
     <div class="gridwrap"><table class="perm-tbl"><thead><tr><th>Bo‘lim</th>${permRoles.map(r=>`<th>${ROLES[r]}</th>`).join('')}<th>Admin</th></tr></thead><tbody>
     ${permPages.map(pg=>`<tr><td>${PAGE_LABELS[pg]}</td>${permRoles.map(r=>`<td><input type="checkbox" ${(s.permissions[r]||[]).includes(pg)?'checked':''} onchange="togglePerm('${r}','${pg}',this.checked)"></td>`).join('')}<td><input type="checkbox" checked disabled></td></tr>`).join('')}
     </tbody></table></div>
-    <div class="hint" style="margin-top:12px"><b>Ko‘rinish doirasi:</b> quyidagi rollar Vazifalar, Dashboard va Hisobotда <b>faqat o‘zining</b> ishini ko‘radi (boshqalarникini emas).</div>
-    <div class="switch" style="margin-top:8px">${permRoles.map(r=>`<label><input type="checkbox" ${s.scopeOwn&&s.scopeOwn[r]?'checked':''} onchange="toggleScope('${r}',this.checked)"> ${ROLES[r]} — faqat o‘zi</label>`).join('')}</div></div>
+    <div class="hint" style="margin-top:12px"><b>Ko‘rinish doirasi:</b> admindan tashqari har bir xodim Vazifalar, Dashboard va Hisobotда <b>faqat o‘zining</b> ishini ko‘radi. Admin hammani ko‘radi va boshqaradi.</div></div>
   <div class="panel"><h2>Ish vaqti va jadval</h2><div class="row"><div><label>Ish boshlanishi</label><input type="time" value="${s.workStart}" onchange="setS('workStart',this.value)"></div><div><label>Kechikish ruxsati (daq)</label><input type="number" value="${s.lateThreshold}" onchange="setS('lateThreshold',+this.value)"></div><div><label>Jarima chegara (%)</label><input type="number" value="${s.legalCapPct}" onchange="setS('legalCapPct',+this.value)"></div></div>
     <label>Ish kunlari</label><div class="switch">${WEEKDAYS.map(w=>`<label><input type="checkbox" ${s.workDays.includes(w.d)?'checked':''} onchange="toggleWD(${w.d})"> ${w.l}</label>`).join('')}</div></div>
   <div class="panel"><h2>💵 Jarima tariflari (so'm)</h2>${PEN_TARIFF.map(r=>`<div class="tarif-row"><span class="lb">${r.label} ${r.note?`<span class="muted small">— ${r.note}</span>`:''}</span><input type="number" value="${s.penalties[r.key]}" onchange="setPen('${r.key}',+this.value)"></div>`).join('')}</div>
