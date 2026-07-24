@@ -827,27 +827,38 @@ function pageTasks(){
 /* ============================================================ DAVOMAT (faqat admin) */
 let attFrom=todayStr().slice(0,8)+'01',attTo=todayStr();
 function datesInRange(from,to){const arr=[];let d=new Date(from);const end=new Date(to);let g=0;while(d<=end&&g<93){arr.push(iso(d));d.setDate(d.getDate()+1);g++;}return arr;}
+function wdOpen(){const w=(DB.workdays||{})[todayStr()];return !!(w&&!w.closedAt);}
 function pageAttend(){
   const staff=DB.employees.filter(e=>e.role!=='owner');
   const dates=datesInRange(attFrom,attTo);
-  const T=todayStr(),wd=(DB.workdays||{})[T];
+  const T=todayStr(),wd=(DB.workdays||{})[T],open=wdOpen();
   view(`<div class="topbar"><h1>Davomat</h1></div>
-  <div class="panel wday ${wd&&!wd.closedAt?'open':''}" style="margin-bottom:14px"><div class="flex sp" style="flex-wrap:wrap;gap:12px">
+  <div class="panel wday ${open?'open':''}" style="margin-bottom:14px"><div class="flex sp" style="flex-wrap:wrap;gap:12px">
     <div><div class="flex" style="gap:8px"><b style="font-size:16px">Bugungi ish kuni</b>${wd?(wd.closedAt?`<span class="chip gray">yopilgan ${wd.closedAt}</span>`:`<span class="chip green">ochiq · ${wd.openedAt} dan</span>`):`<span class="chip gray plain">boshlanmagan</span>`}</div>
       <div class="hint" style="margin-top:3px">${fmtDate(T)} · ${WEEKDAYS.find(w=>w.d===weekdayOf(T)).l}</div></div>
     <div class="flex" style="gap:8px">${!wd?`<button class="btn" onclick="openWorkday()">🔓 Ish kunini ochish</button>`:wd.closedAt?`<button class="btn sec" onclick="showDailyReport('${T}')">📄 Hisobotni ko‘rish</button><button class="btn ghost sm" onclick="reopenWorkday()">qayta ochish</button>`:`<button class="btn sec" onclick="showDailyReport('${T}')">📄 Hisobot (oraliq)</button><button class="btn" onclick="closeWorkday()">🔒 Ish kunini yopish</button>`}</div>
-  </div>${!wd?'<div class="hint" style="margin-top:8px">Ish kunini ochsangiz — bugungi xodimlar ro‘yxati va davomat jadvali shakllanadi. Kun oxirida «Ish kunini yopish» — PDF kunlik hisobot tayyorlanadi.</div>':''}</div>
-  ${wd?'':''}
-  <div class="panel" style="margin-bottom:14px"><div class="row" style="align-items:flex-end">
-    <div><label>Davr boshi</label><input type="date" value="${attFrom}" onchange="attFrom=this.value;pageAttend()"></div>
-    <div><label>Davr oxiri</label><input type="date" value="${attTo}" onchange="attTo=this.value;pageAttend()"></div>
-    <div class="flex" style="flex:2;gap:6px;justify-content:flex-end"><button class="btn sec sm" onclick="attMonth(0)">Shu oy</button><button class="btn sec sm" onclick="attMonth(-1)">O‘tgan oy</button></div>
-  </div><div class="hint">«Keldi» tugmasi hozirgi vaqtni yozadi (qo‘lda tahrirlash mumkin). Xodim ko‘p bo‘lsa jadvalni yon suring.</div></div>
-  <div class="gridwrap"><table class="att"><thead><tr><th>Sana</th>${staff.map(e=>`<th>${e.name}<div class="muted small" style="font-weight:400">${ROLES[e.role]}</div></th>`).join('')}</tr></thead><tbody>
-    ${dates.map(dt=>{const wd=weekdayOf(dt);const isW=!DB.settings.workDays.includes(wd);const wl=WEEKDAYS.find(w=>w.d===wd).l;
-      return `<tr><td class="${isW?'weekend':''}">${fmtDate(dt)} <span class="muted small">${wl}</span></td>${staff.map(e=>{const r=DB.attendance.find(a=>a.employeeId===e.id&&a.date===dt);const ab=r&&ABSENT_ST.concat(PAID_ABSENT_ST).includes(r.status);const at=ab?(DB.settings.absenceTypes.find(x=>x.k===r.status)||{l:r.status}):null;
-        return `<td class="${isW?'weekend':''}">${r&&r.in?`<div class="att-cell"><input type="time" class="cell-in ${r.status==='late'?'cell-late':'cell-present'}" value="${r.in}" onchange="setAtt('${e.id}','${dt}',this.value)"><button class="btn ghost sm" title="holat" onclick="attMenu('${e.id}','${dt}')">⋯</button></div>`:ab?`<div class="att-cell"><span class="chip ${at.paid?'yellow':'red'} plain" onclick="attMenu('${e.id}','${dt}')" style="cursor:pointer">${esc(at.l)}</span></div>`:`<div class="att-cell"><button class="btn sm sec" onclick="markIn('${e.id}','${dt}')">Keldi</button><button class="btn ghost sm" title="yo‘qlik" onclick="attMenu('${e.id}','${dt}')">⋯</button></div>`}</td>`;}).join('')}</tr>`;}).join('')}
-  </tbody></table></div>
+  </div>${!wd?'<div class="hint" style="margin-top:8px">Davomat belgilash uchun avval ish kunini oching. Kun oxirida «Ish kunini yopish» — PDF kunlik hisobot tayyorlanadi va jadval tarixga o‘tadi.</div>':''}</div>
+
+  ${open?`<div class="panel" style="margin-bottom:14px"><h2>✍️ Bugungi davomat — ${fmtDate(T)}</h2>
+    <div class="hint" style="margin:0 0 10px">Kim ishga keldi — belgilang. «Keldi» hozirgi vaqtni yozadi; «⋯» orqali kechikish yoki yo‘qlik turi.</div>
+    <div class="gridwrap"><table><thead><tr><th>Xodim</th><th>Lavozim</th><th>Holat</th><th>Amal</th></tr></thead><tbody>
+    ${staff.map(e=>{const r=attRec(e.id,T);const ab=r&&ABSENT_ST.concat(PAID_ABSENT_ST).includes(r.status);const at=ab?(DB.settings.absenceTypes.find(x=>x.k===r.status)||{l:r.status}):null;
+      const holat=r&&r.in?`<span class="chip ${r.status==='late'?'yellow':'green'} plain">${r.status==='late'?'Kech keldi':'Keldi'} · ${r.in}</span>`:ab?`<span class="chip ${at.paid?'yellow':'red'} plain">${esc(at.l)}</span>`:'<span class="chip gray plain">belgilanmagan</span>';
+      const amal=r&&r.in?`<div class="att-cell"><input type="time" class="cell-in ${r.status==='late'?'cell-late':'cell-present'}" value="${r.in}" onchange="setAtt('${e.id}','${T}',this.value)"><button class="btn ghost sm" onclick="attMenu('${e.id}','${T}')">⋯</button></div>`:`<div class="att-cell"><button class="btn sm sec" onclick="markIn('${e.id}','${T}')">Keldi</button><button class="btn ghost sm" onclick="attMenu('${e.id}','${T}')">⋯</button></div>`;
+      return `<tr><td><b>${esc(e.name)}</b></td><td class="muted small">${ROLES[e.role]}</td><td>${holat}</td><td>${amal}</td></tr>`;}).join('')}
+    </tbody></table></div></div>`:`<div class="notice warn" style="margin-bottom:14px">⚠️ Bugun ish kuni ochilmagan${wd&&wd.closedAt?' (yopilgan)':''}. Davomat belgilash uchun yuqoridan «🔓 Ish kunini ochish»ни bosing.</div>`}
+
+  <div class="panel"><div class="flex sp" style="flex-wrap:wrap;gap:10px"><h2 style="margin:0">🗂 Davomat tarixi <span class="muted small" style="font-weight:400">(faqat ko‘rish)</span></h2></div>
+    <div class="row" style="align-items:flex-end;margin-top:10px">
+      <div><label>Davr boshi</label><input type="date" value="${attFrom}" onchange="attFrom=this.value;pageAttend()"></div>
+      <div><label>Davr oxiri</label><input type="date" value="${attTo}" onchange="attTo=this.value;pageAttend()"></div>
+      <div class="flex" style="flex:2;gap:6px;justify-content:flex-end"><button class="btn sec sm" onclick="attMonth(0)">Shu oy</button><button class="btn sec sm" onclick="attMonth(-1)">O‘tgan oy</button></div>
+    </div><div class="hint">Kim qaysi kuni qaysi vaqtda kelgani. Xodim ko‘p bo‘lsa jadvalni yon suring.</div>
+    <div class="gridwrap" style="margin-top:10px"><table class="att"><thead><tr><th>Sana</th>${staff.map(e=>`<th>${esc(e.name)}<div class="muted small" style="font-weight:400">${ROLES[e.role]}</div></th>`).join('')}</tr></thead><tbody>
+    ${dates.map(dt=>{const isW=!DB.settings.workDays.includes(weekdayOf(dt));const wl=WEEKDAYS.find(w=>w.d===weekdayOf(dt)).l;
+      return `<tr><td class="${isW?'weekend':''}">${fmtDate(dt)} <span class="muted small">${wl}</span></td>${staff.map(e=>{const r=attRec(e.id,dt);const ab=r&&ABSENT_ST.concat(PAID_ABSENT_ST).includes(r.status);const at=ab?(DB.settings.absenceTypes.find(x=>x.k===r.status)||{l:r.status}):null;
+        return `<td class="${isW?'weekend':''}">${r&&r.in?`<span class="chip ${r.status==='late'?'yellow':'green'} plain">${r.in}${r.status==='late'?' kech':''}</span>`:ab?`<span class="chip ${at.paid?'yellow':'red'} plain">${esc(at.l)}</span>`:'<span class="muted small">—</span>'}</td>`;}).join('')}</tr>`;}).join('')}
+  </tbody></table></div></div>
   <div class="panel" style="margin-top:14px"><div class="flex sp"><div><b>Davomat tasdig‘i</b><div class="hint" style="margin-top:2px">Oylik hisobida bu davr davomatini «to‘liq» deb tasdiqlang — shunda hisob ishonchli bo‘ladi.</div></div>
     <label class="flex nowrap" style="margin:0"><input type="checkbox" ${DB.locks[periodKey(attFrom,attTo)]?'checked':''} style="width:auto" onchange="toggleAttLock(this.checked)"> Bu davr to‘liq</label></div></div>`);
 }
@@ -921,11 +932,12 @@ function attMenu(eid,dt){const e=emp(eid),r=DB.attendance.find(a=>a.employeeId==
       <button class="btn sec" onclick="clearAtt('${eid}','${dt}');closeModal()">Tozalash</button></div>
     <div class="relation" style="margin-top:12px"><div class="rl">Yo‘qlik turi</div>
       ${DB.settings.absenceTypes.map(t=>`<button class="btn ${t.paid?'sec':'danger'}" style="margin:4px 6px 0 0" onclick="setAbsence('${eid}','${dt}','${t.k}');closeModal()">${esc(t.l)}${t.paid?' <span class="muted small">(to‘lanadi)</span>':' <span class="muted small">(to‘lanmaydi)</span>'}</button>`).join('')}</div>`);}
-function setAbsence(eid,dt,st){let r=DB.attendance.find(a=>a.employeeId===eid&&a.date===dt);if(!r){r={id:uid(),employeeId:eid,date:dt,in:'',out:'',status:st};DB.attendance.push(r);}else{r.in='';r.out='';r.status=st;}logAudit('davomat: '+st,esc((emp(eid)||{}).name)+' '+fmtDate(dt));save();pageAttend();}
-function clearAtt(eid,dt){DB.attendance=DB.attendance.filter(a=>!(a.employeeId===eid&&a.date===dt));logAudit('davomat tozalandi',esc((emp(eid)||{}).name)+' '+fmtDate(dt));save();pageAttend();}
+function setAbsence(eid,dt,st){if(!attGuard(dt))return;let r=DB.attendance.find(a=>a.employeeId===eid&&a.date===dt);if(!r){r={id:uid(),employeeId:eid,date:dt,in:'',out:'',status:st};DB.attendance.push(r);}else{r.in='';r.out='';r.status=st;}logAudit('davomat: '+st,esc((emp(eid)||{}).name)+' '+fmtDate(dt));save();pageAttend();}
+function clearAtt(eid,dt){if(!attGuard(dt))return;DB.attendance=DB.attendance.filter(a=>!(a.employeeId===eid&&a.date===dt));logAudit('davomat tozalandi',esc((emp(eid)||{}).name)+' '+fmtDate(dt));save();pageAttend();}
 function attMonth(off){const d=new Date();d.setMonth(d.getMonth()+off);const y=d.getFullYear(),m=d.getMonth();attFrom=iso(new Date(y,m,1));attTo=off===0?todayStr():iso(new Date(y,m+1,0));pageAttend();}
 function markIn(eid,date){setAtt(eid,date,nowTime());}
-function setAtt(eid,date,val){let r=DB.attendance.find(a=>a.employeeId===eid&&a.date===date);if(!r){r={id:uid(),employeeId:eid,date,in:'',out:'',status:'present'};DB.attendance.push(r);}r.in=val;if(r.in){const[wh,wm]=DB.settings.workStart.split(':').map(Number),[ih,im]=r.in.split(':').map(Number);r.status=(ih*60+im)-(wh*60+wm)>DB.settings.lateThreshold?'late':'present';}logAudit('davomat: keldi '+val,esc((emp(eid)||{}).name)+' '+fmtDate(date));save();pageAttend();}
+function attGuard(date){if(date!==todayStr()||!wdOpen()){alert('Davomat faqat bugungi ochiq ish kunida belgilanadi. Avval «Ish kunini ochish»ni bosing.');return false;}return true;}
+function setAtt(eid,date,val){if(!attGuard(date))return;let r=DB.attendance.find(a=>a.employeeId===eid&&a.date===date);if(!r){r={id:uid(),employeeId:eid,date,in:'',out:'',status:'present'};DB.attendance.push(r);}r.in=val;if(r.in){const[wh,wm]=DB.settings.workStart.split(':').map(Number),[ih,im]=r.in.split(':').map(Number);r.status=(ih*60+im)-(wh*60+wm)>DB.settings.lateThreshold?'late':'present';}logAudit('davomat: keldi '+val,esc((emp(eid)||{}).name)+' '+fmtDate(date));save();pageAttend();}
 
 /* ============================================================ KPI / OYLIK */
 let salFrom=todayStr().slice(0,8)+'01',salTo=todayStr();
