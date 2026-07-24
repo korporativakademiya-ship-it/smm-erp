@@ -181,6 +181,48 @@ table.att td.weekend,table.att th.weekend{background:#faf9f7}
 }
 @media(max-width:520px){.cards{grid-template-columns:1fr}}
 @media print{.side,.mobtop,.no-print{display:none!important}.main{padding:0;max-width:100%}.panel{border:none;padding:0}}
+/* ===== v6 polish ===== */
+.btn{box-shadow:0 1px 2px rgba(15,15,15,.06)}
+.btn:not(.sec):not(.danger):not(.ghost){background:linear-gradient(180deg,#2b8bec,#2078d6);border-color:#1f6fc7}
+.btn:not(.sec):not(.danger):not(.ghost):hover{background:linear-gradient(180deg,#2078d6,#1a67bd)}
+.card,.panel{box-shadow:0 1px 2px rgba(15,15,15,.03)}
+.card,.kcard,.panel{transition:box-shadow .18s,transform .18s,border-color .18s}
+.card.click:hover,.kcard:hover{box-shadow:0 6px 18px rgba(15,15,15,.09);transform:translateY(-1px)}
+.stat{position:relative;overflow:hidden}
+.stat:before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--accent);opacity:.55}
+h1{letter-spacing:-.025em}
+.chip{border:1px solid rgba(0,0,0,.03)}
+.nav a.active{box-shadow:inset 2px 0 0 var(--accent)}
+.login-card{box-shadow:0 20px 60px rgba(15,15,15,.12)}
+/* daily report */
+.report{max-width:900px;margin:0 auto}
+.rep-head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid var(--text);padding-bottom:14px;margin-bottom:16px;flex-wrap:wrap;gap:8px}
+.rep-title{font-size:24px;font-weight:800;letter-spacing:-.02em}
+.rep-sub{color:var(--muted);font-size:13px;margin-top:3px}
+.rep-meta{color:var(--muted);font-size:12px;text-align:right}
+.rep-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+.rep-kpi{border:1px solid var(--line);border-radius:10px;padding:14px;text-align:center;background:var(--side)}
+.rk-n{font-size:26px;font-weight:800;letter-spacing:-.02em}
+.rk-l{font-size:12px;color:var(--muted);margin-top:2px}
+.rep-sec{margin-bottom:20px}
+.rep-sec h3{font-size:15px;margin:0 0 10px;padding-bottom:6px;border-bottom:1px solid var(--line2)}
+.rep-sec table{border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.rep-summary{background:var(--side);border:1px solid var(--line2);border-left:3px solid var(--accent);border-radius:8px;padding:14px 16px;font-size:14px;line-height:1.7}
+.wday.open{border-color:var(--green);background:linear-gradient(180deg,var(--greenbg),#fff)}
+@media(max-width:700px){.rep-kpis{grid-template-columns:1fr 1fr}}
+@media print{.report{max-width:100%}.rep-kpi{background:#fff}.rep-sec{break-inside:avoid}}
+/* mobile comfort */
+@media(max-width:860px){
+  .btn{padding:10px 15px;font-size:14px}
+  .btn.sm{padding:7px 11px;font-size:13px}
+  .nav a{padding:11px 10px;font-size:15px}
+  input,select,textarea{padding:11px 12px}
+  .daynav button,.seg button{padding:9px 13px}
+  th,td{padding:11px 10px}
+  .kcard{padding:13px}
+  .mobtop{padding:11px 14px}
+  .mobtop b{font-size:15px}
+}
 </style>
 </head>
 <body>
@@ -216,7 +258,8 @@ const nowTime=()=>{const d=new Date();return pad(d.getHours())+':'+pad(d.getMinu
 const fmtDate=d=>d?d.split('-').reverse().join('.'):'—';
 const MONTHS=['Yanvar','Fevral','Mart','Aprel','May','Iyun','Iyul','Avgust','Sentabr','Oktabr','Noyabr','Dekabr'];
 const fmtMonth=m=>{const[y,mm]=m.split('-');return MONTHS[+mm-1]+' '+y;};
-const esc=s=>(s||'').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+function safeUrl(u){u=(u||'').trim();if(!u)return '';if(/^https?:\/\//i.test(u)||/^mailto:/i.test(u))return esc(u);if(/^[\w.-]+\.[a-z]{2,}([\/?#]|$)/i.test(u))return esc('https://'+u);return '';} // faqat http(s)/mailto — javascript: bloklanadi
 function shiftDate(base,delta){const d=new Date(base);d.setDate(d.getDate()+delta);return iso(d);}
 function weekdayOf(dstr){return new Date(dstr).getDay();}
 
@@ -295,6 +338,7 @@ function seed(){
 function migrate(){
   const s=DB.settings;
   if(!s.workDays)s.workDays=[1,2,3,4,5,6];if(s.standardDays)delete s.standardDays;
+  if(!s.workStart)s.workStart='09:00';if(s.lateThreshold==null)s.lateThreshold=15;
   if(!s.legalCapPct)s.legalCapPct=30;
   if(!s.kpiWeights)s.kpiWeights={montajOnTime:34,syomkaOnTime:33,lowRework:20,archiveSaved:13};
   if(!s.penalties)s.penalties={late1560:100000,late60_2:300000,late60_3:500000,shootAbsent1:500000,shootAbsent2:1000000,unexcused1:300000,unexcused2:600000};
@@ -314,11 +358,12 @@ function migrate(){
     if(!e.kpiItems){if(e.role==='mobilograf')e.kpiItems=[{id:uid(),name:'Montaj muddati',amount:100000},{id:uid(),name:'Syomka jadval bo‘yicha',amount:100000},{id:uid(),name:'Qayta ishlash (peredelka)',amount:60000},{id:uid(),name:'Arxiv va material tartibi',amount:40000}];else if(e.role==='smm')e.kpiItems=[{id:uid(),name:'Kontent reja o‘z vaqtida',amount:150000},{id:uid(),name:'Posting jadval bo‘yicha',amount:100000},{id:uid(),name:'Hisobot va tahlil',amount:50000}];else e.kpiItems=[];}
     if(e.role==='admin')adminExists=true;});
   if(!adminExists&&DB.employees[0]){DB.employees[0].role='admin';if(!DB.employees[0].login)DB.employees[0].login='admin';DB.employees[0].pin=DB.employees[0].pin||'1234';}
-  (DB.contents||[]).forEach(c=>{if(!c.published)c.published={};if(c.reworkCount!==undefined)delete c.reworkCount;if(c.kpi)delete c.kpi;
+  (DB.contents||[]).forEach(c=>{if(!Array.isArray(c.tasks))c.tasks=[];if(!Array.isArray(c.platforms))c.platforms=[];if(!c.published)c.published={};if(c.reworkCount!==undefined)delete c.reworkCount;if(c.kpi)delete c.kpi;
     (c.tasks||[]).forEach(t=>{if(t.reworkCount===undefined)t.reworkCount=0;if(!t.createdAt)t.createdAt=todayStr();if(!t.checklist)t.checklist=[];if(t.platform===undefined)t.platform='';if(t.status==='Bajarilmoqda')t.status='Jarayonda';if(t.status==='Tayyor')t.status='Tasdiqlandi';if(!t.createdBy){const a=DB.employees.find(e=>e.role==='smm')||DB.employees[0];t.createdBy=a?a.id:'';}});});
   if(!DB.adjustments)DB.adjustments=[];
   if(!DB.audit)DB.audit=[];
   if(!DB.notifs)DB.notifs=[];
+  if(!DB.workdays)DB.workdays={};
   if(DB.updatedAt===undefined)DB.updatedAt=new Date().toISOString();
   if(DB.__v===undefined)DB.__v=0;
   if(!s.absenceTypes)s.absenceTypes=[{k:'absent',l:'Sababsiz yo‘q',paid:false},{k:'unpaid',l:'To‘lovsiz ta‘til',paid:false},{k:'sick',l:'Kasal (sababli)',paid:true},{k:'vacation',l:'Ta‘til (sababli)',paid:true}];
@@ -349,8 +394,8 @@ async function pull(){
   }else{DB=localDB()||seed();}
   migrate();
 }
-let saveTimer=null,lastPush='',cloudVersion=null,cloudRisky=false,pushing=false;
-function save(){localStorage.setItem(LS_KEY,JSON.stringify(DB));if(CLOUD){clearTimeout(saveTimer);saveTimer=setTimeout(async()=>{await pushNow();saveTimer=null;},600);}}
+let saveTimer=null,lastPush='',cloudVersion=null,cloudRisky=false,pushing=false,dirty=false;
+function save(){localStorage.setItem(LS_KEY,JSON.stringify(DB));dirty=true;if(CLOUD){clearTimeout(saveTimer);saveTimer=setTimeout(async()=>{await pushNow();saveTimer=null;},600);}}
 async function pushNow(){if(!CLOUD)return;
   if(cloudRisky){console.warn('Buzuq o‘qish aniqlangan — bulutga yozish to‘xtatildi (eski ma‘lumotni buzmaslik uchun).');return;}
   pushing=true;
@@ -364,20 +409,23 @@ async function pushNow(){if(!CLOUD)return;
     let res=null;try{res=JSON.parse(await r.text());}catch(_){}
     if(res&&res.conflict&&res.db&&validDB(res.db)){                 // v2 server: eski versiya rad etildi — birlashtiramiz
       DB=mergeDB(res.db,DB);cloudVersion=(res.v!=null?res.v:cloudVersion);DB.__v=cloudVersion;save();}
-    else if(res&&res.ok){cloudVersion=(res.v!=null?res.v:(cloudVersion==null?0:cloudVersion)+1);DB.__v=cloudVersion;}
-    else if(!r.ok){console.warn('Saqlash server xatosi: HTTP '+r.status);}
+    else if(res&&res.ok){cloudVersion=(res.v!=null?res.v:(cloudVersion==null?0:cloudVersion)+1);DB.__v=cloudVersion;dirty=false;}
+    else if(r.ok){dirty=false;}                                     // v1 backend (oddiy javob) — muvaffaqiyatli
+    else{console.warn('Saqlash server xatosi: HTTP '+r.status);}
   }catch(e){console.warn('Saqlashda bulutga ulanib bo‘lmadi (offline/preview) — keyin qayta urinadi.');}
   pushing=false;
 }
 /* Konflikt paytida oddiy birlashtirish: id bo'yicha, mahalliy o'zgarishlarни ustun qo'yadi lekin serverdagi yangi yozuvlarni yo'qotmaydi */
 function mergeDB(server,localD){
-  const out=JSON.parse(JSON.stringify(server));
-  ['employees','projects','contents','attendance','adjustments'].forEach(k=>{
-    const sArr=out[k]||[],lArr=localD[k]||[];const byId={};sArr.forEach(x=>byId[x.id]=x);
-    lArr.forEach(x=>{byId[x.id]=x;});                               // mahalliy yozuv serverникini ustidan yozadi
+  const out=JSON.parse(JSON.stringify(server||{}));
+  ['employees','projects','contents','attendance','adjustments','audit','notifs'].forEach(k=>{
+    const sArr=out[k]||[],lArr=(localD&&localD[k])||[];const byId={};sArr.forEach(x=>x&&x.id&&(byId[x.id]=x));
+    lArr.forEach(x=>{if(x&&x.id)byId[x.id]=x;});                    // mahalliy yozuv serverникини ustidan yozadi (id bo'yicha)
     out[k]=Object.values(byId);
   });
-  out.settings=localD.settings||out.settings;
+  out.workdays=Object.assign({},server&&server.workdays,localD&&localD.workdays);   // xarita: birlashtiramiz
+  out.locks=Object.assign({},server&&server.locks,localD&&localD.locks);
+  out.settings=Object.assign({},server&&server.settings,localD&&localD.settings);   // sozlama: maydon-maydon
   return out;
 }
 function subscribeRealtime(){if(!CLOUD)return;setInterval(async()=>{
@@ -388,7 +436,10 @@ function subscribeRealtime(){if(!CLOUD)return;setInterval(async()=>{
     if(saveTimer||pushing)return;                                   // fetch paytida tahrir bo'ldi
     if(j&&j.db&&validDB(j.db))j=j.db;
     if(validDB(j)){cloudRisky=false;if(j.__v!=null)cloudVersion=j.__v;const s=stable(j);
-      if(s!==stable(DB)&&s!==lastPush){const openId=document.getElementById('overlay').classList.contains('open');DB=j;migrate();if(!openId)refresh();}}}catch(e){}
+      if(s!==stable(DB)&&s!==lastPush){
+        if(dirty){DB=mergeDB(j,DB);cloudVersion=(j.__v!=null?j.__v:cloudVersion);migrate();save();refresh();} // mahalliy o'zgarish bor — birlashtiramiz (yo'qotmaymiz)
+        else{const openId=document.getElementById('overlay').classList.contains('open');DB=j;migrate();if(!openId)refresh();}
+      }}}catch(e){}
 },10000);}
 
 function emp(id){return DB.employees.find(e=>e.id===id);}
@@ -507,7 +558,7 @@ function pageDash(){
     <div class="panel"><h2 style="color:var(--red)">Kechikkan vazifalar</h2>${lateT.length?tblT(lateT):'<div class="muted small">Kechikkan vazifa yo‘q 👍</div>'}</div>
   </div>`);
 }
-function tblT(list){return `<table><thead><tr><th>Vazifa</th><th>Xodim</th><th>Kontent</th><th>Deadline</th></tr></thead><tbody>${list.map(t=>`<tr class="rowclick" onclick="viewTask('${t.id}')"><td>${t.title}</td><td>${emp(t.assigneeId)?.name||'—'}</td><td class="muted small">${t.content.topic}</td><td>${fmtDate(t.deadline)}</td></tr>`).join('')}</tbody></table>`;}
+function tblT(list){return `<table><thead><tr><th>Vazifa</th><th>Xodim</th><th>Kontent</th><th>Deadline</th></tr></thead><tbody>${list.map(t=>`<tr class="rowclick" onclick="viewTask('${t.id}')"><td>${esc(t.title)}</td><td>${emp(t.assigneeId)?.name||'—'}</td><td class="muted small">${esc(t.content.topic)}</td><td>${fmtDate(t.deadline)}</td></tr>`).join('')}</tbody></table>`;}
 
 /* ============================================================ KONTENT */
 let cFilter='all',cView='table';
@@ -604,11 +655,11 @@ function viewContent(id){
       <tr><td>Mas'ul</td><td>${emp(c.responsibleId)?.name||'—'}</td></tr>
       <tr><td>Chop / Deadline</td><td>${fmtDate(c.scheduled)} / ${fmtDate(c.deadline)}</td></tr>
       <tr><td>Platformalar</td><td>${c.platforms.map(p=>`<span class="tag">${p}${c.published&&c.published[p]?' ✅':''}</span>`).join('')||'—'}</td></tr>
-      <tr><td>Referens / Drive</td><td>${c.references?`<a href="${c.references}" target="_blank">referens</a>`:'—'} · ${c.drive?`<a href="${c.drive}" target="_blank">drive</a>`:'<span class="muted">yo‘q</span>'}</td></tr>
+      <tr><td>Referens / Drive</td><td>${safeUrl(c.references)?`<a href="${safeUrl(c.references)}" target="_blank" rel="noopener">referens</a>`:'—'} · ${safeUrl(c.drive)?`<a href="${safeUrl(c.drive)}" target="_blank" rel="noopener">drive</a>`:'<span class="muted">yo‘q</span>'}</td></tr>
     </tbody></table>
     <div class="relation"><div class="rl">🔗 Bog‘liq vazifalar (${c.tasks.length})</div>
       <div class="gridwrap"><table><thead><tr><th>Vazifa</th><th>Bajaruvchi</th><th>Deadline</th><th>Status</th><th>Link</th>${canEdit?'<th></th>':''}</tr></thead><tbody>
-      ${c.tasks.map(t=>`<tr class="rowclick" onclick="viewTask('${t.id}')"><td><b>${t.title}</b>${t.reworkCount?` <span class="chip red plain">↩${t.reworkCount}</span>`:''}${t.checklist&&t.checklist.length?` <span class="muted small">☑${t.checklist.filter(x=>x.done).length}/${t.checklist.length}</span>`:''}</td><td>${emp(t.assigneeId)?.name||'—'}</td><td>${fmtDate(t.deadline)} ${onTime(t)?'<span class="chip green plain">vaqtida</span>':(t.doneAt&&t.deadline&&t.doneAt>t.deadline?'<span class="chip red plain">kech</span>':'')}</td><td><span class="chip ${TSC[t.status]}">${t.status}</span></td><td>${t.link?`<a href="${t.link}" target="_blank" onclick="event.stopPropagation()">🔗</a>`:'—'}</td>${canEdit?`<td><button class="x" onclick="event.stopPropagation();delTask('${c.id}','${t.id}')">×</button></td>`:''}</tr>`).join('')||'<tr><td colspan="6" class="muted small">Vazifa yo‘q</td></tr>'}
+      ${c.tasks.map(t=>`<tr class="rowclick" onclick="viewTask('${t.id}')"><td><b>${esc(t.title)}</b>${t.reworkCount?` <span class="chip red plain">↩${t.reworkCount}</span>`:''}${t.checklist&&t.checklist.length?` <span class="muted small">☑${t.checklist.filter(x=>x.done).length}/${t.checklist.length}</span>`:''}</td><td>${emp(t.assigneeId)?.name||'—'}</td><td>${fmtDate(t.deadline)} ${onTime(t)?'<span class="chip green plain">vaqtida</span>':(t.doneAt&&t.deadline&&t.doneAt>t.deadline?'<span class="chip red plain">kech</span>':'')}</td><td><span class="chip ${TSC[t.status]}">${t.status}</span></td><td>${safeUrl(t.link)?`<a href="${safeUrl(t.link)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">🔗</a>`:'—'}</td>${canEdit?`<td><button class="x" onclick="event.stopPropagation();delTask('${c.id}','${t.id}')">×</button></td>`:''}</tr>`).join('')||'<tr><td colspan="6" class="muted small">Vazifa yo‘q</td></tr>'}
       </tbody></table></div>
       ${canEdit?`<button class="btn sm sec" style="margin-top:10px" onclick="addTask('${c.id}')">+ Vazifa qo‘shish</button>`:''}
     </div>
@@ -663,7 +714,7 @@ function viewTask(tid){
   const chkDone=t.checklist?t.checklist.filter(x=>x.done).length:0;
   const isMine=t.assigneeId===currentUser.id;const canManage=currentUser.role==='admin'||currentUser.role==='smm';
   const canSubmit=isMine||canManage;
-  openModal(`<h2>${t.title} <button class="x" onclick="closeModal()">×</button></h2>
+  openModal(`<h2>${esc(t.title)} <button class="x" onclick="closeModal()">×</button></h2>
     <div class="flex" style="gap:6px;margin:2px 0 12px"><span class="chip ${TSC[t.status]}">${t.status}</span><span class="tag">${t.part}</span>${t.reworkCount?`<span class="chip red">↩ ${t.reworkCount} marta qaytarilgan</span>`:''}</div>
     <div class="relation"><div class="rl">🔗 Qaysi kontent uchun</div><div class="flex sp"><div><b>${esc(c.topic)}</b><div class="muted small">${proj(c.projectId)?.name||''} · ${c.format} · ${c.status}</div></div><button class="btn sm sec" onclick="viewContent('${c.id}')">Kontent →</button></div></div>
     <table class="kv" style="margin-top:14px"><tbody>
@@ -672,7 +723,7 @@ function viewTask(tid){
       <tr><td>Berilgan sana</td><td>${fmtDate(t.createdAt)}</td></tr>
       <tr><td>Bajarilishi kerak</td><td>${fmtDate(t.deadline)} ${t.status!=='Tasdiqlandi'&&t.deadline&&t.deadline<todayStr()?'<span class="chip red plain">muddat o‘tdi</span>':''}</td></tr>
       <tr><td>Bajarilgan sana</td><td>${t.doneAt?fmtDate(t.doneAt)+(onTime(t)?' <span class="chip green plain">vaqtida</span>':' <span class="chip red plain">kech</span>'):'—'}</td></tr>
-      <tr><td>Ish havolasi</td><td>${t.link?`<a href="${t.link}" target="_blank">havola</a>`:'—'}</td></tr>
+      <tr><td>Ish havolasi</td><td>${safeUrl(t.link)?`<a href="${safeUrl(t.link)}" target="_blank" rel="noopener">havola</a>`:'—'}</td></tr>
     </tbody></table>
     ${t.checklist&&t.checklist.length?`<div class="relation" style="margin-top:14px"><div class="rl">☑ Checklist (${chkDone}/${t.checklist.length})</div>${t.checklist.map((x,i)=>`<label class="check" style="cursor:pointer"><input type="checkbox" ${x.done?'checked':''} ${canSubmit?'':'disabled'} onchange="toggleCheck('${t.id}',${i})"> <span style="${x.done?'text-decoration:line-through;color:var(--muted)':''}">${esc(x.text)}</span></label>`).join('')}</div>`:''}
     ${t.reworkLog&&t.reworkLog.length?`<div class="relation" style="margin-top:14px"><div class="rl">↩ Qaytarish tarixi (${t.reworkLog.length})</div>${t.reworkLog.slice().reverse().map(rl=>`<div style="padding:6px 0;border-bottom:1px solid var(--line)"><div>${esc(rl.reason)||'<span class="muted">sabab yozilmagan</span>'}</div><div class="muted small">${esc(rl.by)} · ${fmtTs(rl.ts)}</div></div>`).join('')}</div>`:''}
@@ -685,7 +736,7 @@ function taskActions(t,c){
   const canAppr=canApprove(t);
   if(t.status==='Yangi')return (isMine||mgr)?`<div class="relation" style="margin-top:14px"><button class="btn" onclick="acceptTask('${t.id}')">✋ Qabul qildim</button><div class="hint">Qabul qilsangiz — «Jarayonda»ga o‘tadi.</div></div>`:`<div class="hint" style="margin-top:12px">Yangi vazifa — bajaruvchi qabul qilishi kutilmoqda.</div>`;
   if(t.status==='Jarayonda')return (isMine||mgr)?`<div class="relation" style="margin-top:14px"><div class="rl">Ishni topshirish</div><label>Bajarilgan ish havolasi</label><div class="flex"><input id="lnk_${t.id}" placeholder="https://..." value="${esc(t.link)}"><button class="btn" onclick="finishTask('${t.id}')">✓ Tugatdim</button></div><div class="hint">Tugatilgach «Tekshiruvda»ga o‘tadi. Tasdiqlovchi: <b>${apprName}</b>.</div></div>`:`<div class="hint" style="margin-top:12px">Vazifa jarayonda.</div>`;
-  if(t.status==='Tekshiruvda')return canAppr?`<div class="relation" style="margin-top:14px"><div class="rl">Tekshiruv — tasdiqlovchi: ${apprName}</div>${t.link?`<div class="small" style="margin-bottom:8px">Ish: <a href="${t.link}" target="_blank">havola</a></div>`:''}<div class="flex" style="gap:8px"><button class="btn" onclick="approveTask('${t.id}')">✓ Tasdiqlayman</button><button class="btn danger" onclick="returnTask('${t.id}')">↩ Qaytarish</button></div></div>`:`<div class="hint" style="margin-top:12px">Tekshiruvda — <b>${apprName}</b> tasdiqlashi kutilmoqda.${isMine?' O‘z vazifangizni o‘zingiz tasdiqlay olmaysiz.':''}</div>`;
+  if(t.status==='Tekshiruvda')return canAppr?`<div class="relation" style="margin-top:14px"><div class="rl">Tekshiruv — tasdiqlovchi: ${apprName}</div>${safeUrl(t.link)?`<div class="small" style="margin-bottom:8px">Ish: <a href="${safeUrl(t.link)}" target="_blank" rel="noopener">havola</a></div>`:''}<div class="flex" style="gap:8px"><button class="btn" onclick="approveTask('${t.id}')">✓ Tasdiqlayman</button><button class="btn danger" onclick="returnTask('${t.id}')">↩ Qaytarish</button></div></div>`:`<div class="hint" style="margin-top:12px">Tekshiruvda — <b>${apprName}</b> tasdiqlashi kutilmoqda.${isMine?' O‘z vazifangizni o‘zingiz tasdiqlay olmaysiz.':''}</div>`;
   return `<div class="relation" style="margin-top:14px"><span class="chip green">✓ Tasdiqlandi</span> ${(mgr||canAppr)?`<button class="btn ghost sm" onclick="reopenTask('${t.id}')">qayta ochish</button>`:''}</div>`;
 }
 function toggleCheck(tid,i){const f=findTask(tid);if(!f)return;f.t.checklist[i].done=!f.t.checklist[i].done;save();viewTask(tid);}
@@ -737,7 +788,7 @@ function pageTasks(){
   </div>
   <div class="hint no-print" style="margin:-6px 0 10px">💡 Kompyuterda kartochkani sudrab, telefonda kartochka ostidagi <b>tugma</b> orqali (yoki kartochkaga bosib) status o‘zgartiring.</div>
   <div class="kanban">${TASK_STATUS.map(st=>{const items=all.filter(t=>t.status===st);return `<div class="kcol" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')" ondrop="dropTask(event,'${st}')"><h3>${st} <span>${items.length}</span></h3>
-      ${items.map(t=>{const late=t.deadline&&t.deadline<todayStr()&&t.status!=='Tasdiqlandi';const nl={Yangi:'✋ Qabul qildim',Jarayonda:'✓ Tugatdim',Tekshiruvda:'✓ Tasdiqlash'}[t.status];return `<div class="kcard" draggable="true" ondragstart="event.dataTransfer.setData('tid','${t.id}')" onclick="viewTask('${t.id}')"><div class="flex sp"><b>${esc(t.title)}</b><span class="tag">${t.part}</span></div><div class="rel">📄 ${esc(t.content.topic)}</div><div class="flex sp" style="margin-top:8px"><span class="tag">${emp(t.assigneeId)?.name||'—'}</span><span class="small ${late?'neg':'muted'}">${fmtDate(t.deadline)}${t.reworkCount?' ↩'+t.reworkCount:''}</span></div>${nl?`<button class="btn sm sec no-print" style="margin-top:8px;width:100%" onclick="event.stopPropagation();advanceTask('${t.id}')">${nl} →</button>`:''}</div>`;}).join('')||'<div class="muted small" style="padding:6px 8px">—</div>'}
+      ${items.map(t=>{const late=t.deadline&&t.deadline<todayStr()&&t.status!=='Tasdiqlandi';const nl={Yangi:'✋ Qabul qildim',Jarayonda:'✓ Tugatdim',Tekshiruvda:'✓ Tasdiqlash'}[t.status];const canAct=t.status==='Tekshiruvda'?canApprove(t):(t.assigneeId===currentUser.id||currentUser.role==='admin'||currentUser.role==='smm');return `<div class="kcard" draggable="true" ondragstart="event.dataTransfer.setData('tid','${t.id}')" onclick="viewTask('${t.id}')"><div class="flex sp"><b>${esc(t.title)}</b><span class="tag">${t.part}</span></div><div class="rel">📄 ${esc(t.content.topic)}</div><div class="flex sp" style="margin-top:8px"><span class="tag">${emp(t.assigneeId)?.name||'—'}</span><span class="small ${late?'neg':'muted'}">${fmtDate(t.deadline)}${t.reworkCount?' ↩'+t.reworkCount:''}</span></div>${nl&&canAct?`<button class="btn sm sec no-print" style="margin-top:8px;width:100%" onclick="event.stopPropagation();advanceTask('${t.id}')">${nl} →</button>`:''}</div>`;}).join('')||'<div class="muted small" style="padding:6px 8px">—</div>'}
     </div>`;}).join('')}</div>`);
 }
 
@@ -747,8 +798,14 @@ function datesInRange(from,to){const arr=[];let d=new Date(from);const end=new D
 function pageAttend(){
   const staff=DB.employees.filter(e=>e.role!=='owner');
   const dates=datesInRange(attFrom,attTo);
+  const T=todayStr(),wd=(DB.workdays||{})[T];
   view(`<div class="topbar"><h1>Davomat</h1></div>
-  <div class="notice">🔒 Davomatni faqat admin belgilaydi. Xodimlar o‘zini o‘zi davomat qila olmaydi.</div>
+  <div class="panel wday ${wd&&!wd.closedAt?'open':''}" style="margin-bottom:14px"><div class="flex sp" style="flex-wrap:wrap;gap:12px">
+    <div><div class="flex" style="gap:8px"><b style="font-size:16px">Bugungi ish kuni</b>${wd?(wd.closedAt?`<span class="chip gray">yopilgan ${wd.closedAt}</span>`:`<span class="chip green">ochiq · ${wd.openedAt} dan</span>`):`<span class="chip gray plain">boshlanmagan</span>`}</div>
+      <div class="hint" style="margin-top:3px">${fmtDate(T)} · ${WEEKDAYS.find(w=>w.d===weekdayOf(T)).l}</div></div>
+    <div class="flex" style="gap:8px">${!wd?`<button class="btn" onclick="openWorkday()">🔓 Ish kunini ochish</button>`:wd.closedAt?`<button class="btn sec" onclick="showDailyReport('${T}')">📄 Hisobotni ko‘rish</button><button class="btn ghost sm" onclick="reopenWorkday()">qayta ochish</button>`:`<button class="btn sec" onclick="showDailyReport('${T}')">📄 Hisobot (oraliq)</button><button class="btn" onclick="closeWorkday()">🔒 Ish kunini yopish</button>`}</div>
+  </div>${!wd?'<div class="hint" style="margin-top:8px">Ish kunini ochsangiz — bugungi xodimlar ro‘yxati va davomat jadvali shakllanadi. Kun oxirida «Ish kunini yopish» — PDF kunlik hisobot tayyorlanadi.</div>':''}</div>
+  ${wd?'':''}
   <div class="panel" style="margin-bottom:14px"><div class="row" style="align-items:flex-end">
     <div><label>Davr boshi</label><input type="date" value="${attFrom}" onchange="attFrom=this.value;pageAttend()"></div>
     <div><label>Davr oxiri</label><input type="date" value="${attTo}" onchange="attTo=this.value;pageAttend()"></div>
@@ -763,6 +820,44 @@ function pageAttend(){
     <label class="flex nowrap" style="margin:0"><input type="checkbox" ${DB.locks[periodKey(attFrom,attTo)]?'checked':''} style="width:auto" onchange="toggleAttLock(this.checked)"> Bu davr to‘liq</label></div></div>`);
 }
 function toggleAttLock(on){DB.locks[periodKey(attFrom,attTo)]=on;logAudit(on?'davomat tasdiqlandi':'davomat tasdig‘i olindi',fmtDate(attFrom)+'—'+fmtDate(attTo));save();}
+function openWorkday(){const T=todayStr();DB.workdays=DB.workdays||{};DB.workdays[T]={openedAt:nowTime()};attFrom=T;attTo=T;logAudit('ish kuni ochildi',fmtDate(T));save();pageAttend();}
+function closeWorkday(){const T=todayStr();if(!DB.workdays||!DB.workdays[T])return;if(!confirm('Ish kunini yopib, kunlik hisobot tayyorlansinmi?'))return;DB.workdays[T].closedAt=nowTime();logAudit('ish kuni yopildi',fmtDate(T));save();showDailyReport(T);}
+function reopenWorkday(){const T=todayStr();if(DB.workdays&&DB.workdays[T]){delete DB.workdays[T].closedAt;logAudit('ish kuni qayta ochildi',fmtDate(T));save();pageAttend();}}
+function attStatusLabel(st){return ({present:'✅ Keldi',late:'🟡 Kech keldi',absent:'🔴 Kelmadi',unpaid:'🔴 To‘lovsiz yo‘q',sick:'🟠 Kasal (sababli)',vacation:'🟠 Ta‘til (sababli)'})[st]||'⚪ Belgilanmagan';}
+function showDailyReport(date){
+  cur='attend';
+  const staff=DB.employees.filter(e=>e.role!=='owner'&&e.role!=='admin'&&e.active!==false);
+  const all=allTasks();
+  const dueToday=all.filter(t=>t.deadline===date);
+  const doneToday=all.filter(t=>t.doneAt===date&&t.status==='Tasdiqlandi');
+  const doneDue=dueToday.filter(t=>t.status==='Tasdiqlandi');
+  const notDone=dueToday.filter(t=>t.status!=='Tasdiqlandi');
+  const todayC=DB.contents.filter(c=>c.scheduled===date&&(c.platforms||[]).length);
+  const tm=shiftDate(date,1),tmC=DB.contents.filter(c=>c.scheduled===tm);
+  const wd=(DB.workdays||{})[date]||{};
+  const present=staff.filter(e=>{const r=attRec(e.id,date);return r&&r.in;}).length;
+  const postSlots=todayC.reduce((a,c)=>a+(c.platforms||[]).length,0);
+  const postDone=todayC.reduce((a,c)=>a+(c.platforms||[]).filter(p=>c.published&&c.published[p]).length,0);
+  view(`<div class="topbar no-print"><button class="btn sec" onclick="pageAttend()">← Davomat</button><button class="btn" onclick="window.print()">🖨 PDF chiqarish</button></div>
+  <div class="report">
+    <div class="rep-head"><div><div class="rep-title">Kunlik hisobot</div><div class="rep-sub">${fmtDate(date)} · ${WEEKDAYS.find(w=>w.d===weekdayOf(date)).l} · SMM ERP</div></div>
+      <div class="rep-meta">${wd.openedAt?`Ochilgan: ${wd.openedAt}`:''}${wd.closedAt?` · Yopilgan: ${wd.closedAt}`:''}</div></div>
+    <div class="rep-kpis">
+      <div class="rep-kpi"><div class="rk-n">${present}/${staff.length}</div><div class="rk-l">Ishga keldi</div></div>
+      <div class="rep-kpi"><div class="rk-n" style="color:var(--green)">${doneDue.length}</div><div class="rk-l">Vazifa bajarildi</div></div>
+      <div class="rep-kpi"><div class="rk-n" style="color:var(--red)">${notDone.length}</div><div class="rk-l">Bajarilmadi</div></div>
+      <div class="rep-kpi"><div class="rk-n">${postDone}/${postSlots}</div><div class="rk-l">Post chiqdi</div></div>
+    </div>
+    <div class="rep-sec"><h3>📋 Davomat</h3><table><thead><tr><th>Xodim</th><th>Lavozim</th><th>Holat</th><th>Kelgan vaqt</th></tr></thead><tbody>
+      ${staff.map(e=>{const r=attRec(e.id,date);const st=r?r.status:'';return `<tr><td><b>${esc(e.name)}</b></td><td class="muted">${ROLES[e.role]}</td><td>${attStatusLabel(st)}</td><td>${r&&r.in?r.in:'—'}</td></tr>`;}).join('')||'<tr><td colspan="4" class="muted">Xodim yo‘q</td></tr>'}
+    </tbody></table></div>
+    <div class="rep-sec"><h3>✅ Bajarilgan ishlar (${doneToday.length})</h3>${doneToday.length?`<table><thead><tr><th>Vazifa</th><th>Xodim</th><th>Kontent</th></tr></thead><tbody>${doneToday.map(t=>`<tr><td>${esc(t.title)}</td><td>${esc((emp(t.assigneeId)||{}).name||'—')}</td><td class="muted">${esc(t.content.topic)}</td></tr>`).join('')}</tbody></table>`:'<div class="muted small">Bugun tasdiqlangan ish yo‘q.</div>'}</div>
+    <div class="rep-sec"><h3>⏳ Bajarilmagan / kechikkan (bugun muddati)</h3>${notDone.length?`<table><thead><tr><th>Vazifa</th><th>Xodim</th><th>Holat</th></tr></thead><tbody>${notDone.map(t=>`<tr><td>${esc(t.title)}</td><td>${esc((emp(t.assigneeId)||{}).name||'—')}</td><td><span class="chip ${TSC[t.status]}">${t.status}</span></td></tr>`).join('')}</tbody></table>`:'<div class="muted small">Bugungi muddatli hamma ish bajarilgan 👍</div>'}</div>
+    <div class="rep-sec"><h3>📱 Bugungi kontent (postlar)</h3>${todayC.length?`<table><thead><tr><th>Mavzu</th><th>Loyiha</th><th>Platformalar</th></tr></thead><tbody>${todayC.map(c=>`<tr><td><b>${esc(c.topic)}</b></td><td class="muted">${esc((proj(c.projectId)||{}).name||'—')}</td><td>${(c.platforms||[]).map(p=>`<span class="chip ${c.published&&c.published[p]?'green':'red'} plain">${p} ${c.published&&c.published[p]?'✅':'❌'}</span>`).join(' ')}</td></tr>`).join('')}</tbody></table>`:'<div class="muted small">Bugunga rejalashtirilgan post yo‘q.</div>'}</div>
+    <div class="rep-sec"><h3>📅 Ertaga (${fmtDate(tm)})</h3>${tmC.length?`<table><thead><tr><th>Mavzu</th><th>Loyiha</th><th>Format</th><th>Platformalar</th></tr></thead><tbody>${tmC.map(c=>`<tr><td><b>${esc(c.topic)}</b></td><td class="muted">${esc((proj(c.projectId)||{}).name||'—')}</td><td>${esc(c.format)}</td><td>${(c.platforms||[]).map(p=>`<span class="tag">${p}</span>`).join('')||'—'}</td></tr>`).join('')}</tbody></table>`:'<div class="muted small">Ertaga uchun rejalashtirilgan kontent yo‘q.</div>'}</div>
+    <div class="rep-summary"><b>Xulosa:</b> Bugun ${present}/${staff.length} xodim ishga keldi. ${doneDue.length} vazifa bajarildi, ${notDone.length} tasi bajarilmadi. ${postSlots?`Rejadagi ${postSlots} postdan ${postDone} tasi chiqdi${postDone<postSlots?`, ${postSlots-postDone} tasi chiqmadi`:''}.`:'Bugunga post rejalashtirilmagan.'} Ertaga ${tmC.length} ta kontent rejalashtirilgan.</div>
+  </div>`);
+}
 function attMenu(eid,dt){const e=emp(eid),r=DB.attendance.find(a=>a.employeeId===eid&&a.date===dt);
   openModal(`<h2>Davomat — ${esc(e.name)} <button class="x" onclick="closeModal();pageAttend()">×</button></h2>
     <div class="hint" style="margin-top:2px">${fmtDate(dt)}</div>
@@ -954,7 +1049,10 @@ function saveEmp(id){const type=v('e_type');const role=type==='client'?'owner':v
   const d={name:v('e_name'),role,phone:v('e_phone'),login:v('e_login').trim(),pin:v('e_pin').trim(),active:document.getElementById('e_active').checked};
   if(type==='staff'){d.fix=+v('e_fix')||0;d.taskPay=+v('e_taskpay')||0;}else{d.fix=0;d.taskPay=0;}
   if(id)Object.assign(emp(id),d);else DB.employees.push({id:uid(),...d});logAudit(id?'foydalanuvchi tahrirlandi':'foydalanuvchi qo‘shildi',esc(d.name));save();closeModal();pageEmployees();}
-function delEmp(id){if(id===currentUser.id){alert('O‘zingizni o‘chira olmaysiz.');return;}if(!confirm('O‘chirilsinmi?'))return;DB.employees=DB.employees.filter(e=>e.id!==id);save();pageEmployees();}
+function delEmp(id){if(id===currentUser.id){alert('O‘zingizni o‘chira olmaysiz.');return;}if(!confirm('O‘chirilsinmi?'))return;
+  const nm=(emp(id)||{}).name||'';DB.employees=DB.employees.filter(e=>e.id!==id);
+  DB.projects.forEach(p=>{p.team=(p.team||[]).filter(x=>x!==id);if(p.ownerId===id)p.ownerId='';if(p.assignMap)Object.keys(p.assignMap).forEach(k=>{if(p.assignMap[k]===id)delete p.assignMap[k];});}); // bog'liq havolalarni tozalash
+  logAudit('foydalanuvchi o‘chirildi',esc(nm));save();pageEmployees();}
 
 /* ============================================================ LOYIHALAR */
 let pView='table';
