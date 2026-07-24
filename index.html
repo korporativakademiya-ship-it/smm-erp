@@ -965,18 +965,17 @@ function attRec(eid,date){return DB.attendance.find(a=>a.employeeId===eid&&a.dat
 function calcSalaryRange(e,from,to){
   const key=periodKey(from,to),adj=DB.adjustments.find(x=>x.employeeId===e.id&&x.period===key)||{};
   const today=todayStr();
-  // 1) FIKS — DEFAULT: ish kuni "kelgan" deb hisoblanadi; faqat "yo'q" (absent/unpaid) belgilangan kun kamaytiradi
+  // 1) FIKS — ish kuni = OCHILGAN kunlar. Oydagi jami ochilgan kun = maxraj; xodim kelgan kunlarga to'lanadi.
   let fix=0,presentDays=0,absentDays=0,paidAbsentDays=0,lateDays=0;
-  {let d=new Date(from);const end=new Date(to);let g=0;
-    while(d<=end&&g<400){const ds=iso(d);
-      if(DB.settings.workDays.includes(d.getDay())){
-        const r=attRec(e.id,ds);const st=r?r.status:'present';
-        if(ABSENT_ST.includes(st)){absentDays++;}                  // to'lanmaydi
-        else{fix+=(e.fix||0)/workingDaysInMonth(d.getFullYear(),d.getMonth());presentDays++;
-          if(st==='late')lateDays++;if(PAID_ABSENT_ST.includes(st))paidAbsentDays++;}
-      }d.setDate(d.getDate()+1);g++;}}
+  const openedByMonth={};Object.keys(DB.workdays||{}).forEach(d=>{const m=d.slice(0,7);openedByMonth[m]=(openedByMonth[m]||0)+1;});
+  const openedDates=Object.keys(DB.workdays||{}).filter(d=>d>=from&&d<=to).sort();
+  openedDates.forEach(ds=>{const denom=openedByMonth[ds.slice(0,7)]||1;const dailyFix=(e.fix||0)/denom;
+    const r=attRec(e.id,ds);const st=r?r.status:null;
+    if(r&&r.in){fix+=dailyFix;presentDays++;if(st==='late')lateDays++;}          // keldi
+    else if(st&&PAID_ABSENT_ST.includes(st)){fix+=dailyFix;presentDays++;paidAbsentDays++;} // sababli — to'lanadi
+    else{absentDays++;}});                                                        // kelmadi/belgilanmagan — to'lanmaydi
   fix=Math.round(fix);
-  const workDays=workDaysInRange(from,to);
+  const workDays=openedDates.length;                                             // davrda ochilgan ish kunlari
   // 2) VAZIFA — bosqichli baho; muddati kelmagan (kelajakdagi, hali bajarilmagan) vazifalar maxrajdan chiqariladi
   const myTasks=DB.contents.flatMap(c=>c.tasks).filter(t=>t.assigneeId===e.id&&t.deadline&&t.deadline>=from&&t.deadline<=to);
   const dueTasks=myTasks.filter(t=>t.status==='Tasdiqlandi'||(t.deadline&&t.deadline<=today)); // due yoki bajarilgan
@@ -1024,7 +1023,7 @@ function pageSalary(){
     <table><thead><tr><th>Xodim</th><th class="right">Fiks</th><th class="right">Vazifa</th><th class="right">Bonus</th><th class="right">Jami</th><th class="no-print"></th></tr></thead><tbody>
     ${rows.map(r=>`<tr><td><b>${r.name}</b><div class="muted small">${r.presentDays}/${r.workDays} kun${r.absentDays?` · <span style="color:var(--red)">${r.absentDays} yo‘q</span>`:''}${r.lateDays?` · ${r.lateDays} kech`:''} · ${r.taskNA?'vazifa berilmagan':'vazifa '+r.onTime+'/'+r.totalTasks+' ('+r.taskPct+'%)'}</div></td><td class="right money">${money(r.fix)}</td><td class="right money ${r.taskNA?'muted':'pos'}">${r.taskNA?'—':money(r.taskPay)+' <span class="muted small">'+r.taskPct+'%</span>'}</td><td class="right money">${r.bonus?'<span class="pos">'+money(r.bonus)+'</span>':'0'}${r.deduction?` <span class="neg" title="${r.penWaived?'admin bekor qildi':(r.penList.join(', ')||'qo‘lda')}">-${money(r.deduction)}${r.capped?'*':''}</span>`:''}</td><td class="right money" style="font-size:15px">${money(r.total)}</td><td class="no-print"><button class="btn sm" onclick="payslip('${r.id}')">Batafsil</button> <button class="btn sm sec" onclick="editAdj('${r.id}')">Bonus/Jarima</button></td></tr>`).join('')}
     </tbody><tfoot><tr><td>JAMI</td><td class="right money">${money(T.fix)}</td><td class="right money pos">${money(T.taskPay)}</td><td class="right money">${money(T.bonus-T.deduction)}</td><td class="right money" style="font-size:16px">${money(T.total)}</td><td class="no-print"></td></tr></tfoot></table></div>
-  <div class="notice"><b>1. Fiks</b> = oylik × (kelgan kunlar ÷ oy ish kunlari) — davomatga asoslangan. <b>2. Vazifa</b> = vazifa to‘lovi × (o‘z vaqtida bajarilgan ÷ jami vazifalar). <b>3. Bonus</b> — qo‘lda beriladi.</div>`);
+  <div class="notice"><b>1. Fiks</b> = oylik × (kelgan kunlar ÷ <b>oyda ochilgan ish kunlari</b>) — davomatga asoslangan. <b>2. Vazifa</b> = vazifa to‘lovi × (o‘z vaqtida bajarilgan ÷ jami vazifalar). <b>3. Bonus</b> — qo‘lda beriladi.<br><span class="small">Eslatma: ish kuni = «Davomat»да ochilgan kun. Oyda nechta ish kuni ochsangiz — shuncha ish kuni hisoblanadi.</span></div>`);
 }
 function editAdj(eid){const e=emp(eid),key=periodKey(salFrom,salTo),adj=getAdj(eid,key),r=calcSalaryRange(e,salFrom,salTo);
   openModal(`<h2>Bonus / Jarima — ${e.name} <button class="x" onclick="closeModal();pageSalary()">×</button></h2>
@@ -1045,8 +1044,8 @@ function payslip(eid){const e=emp(eid),r=calcSalaryRange(e,salFrom,salTo);
     <div class="flex sp"><b style="font-size:17px">${e.name}</b><span class="muted">${ROLES[e.role]}</span></div>
     <div class="muted small" style="margin:3px 0 14px">Davr: ${fmtDate(salFrom)} — ${fmtDate(salTo)}</div>
     ${DB.locks[periodKey(salFrom,salTo)]?'':'<div class="notice warn" style="margin-bottom:12px">⚠️ Bu davr davomati hali «to‘liq» deb tasdiqlanmagan. Davomat bo‘limida tasdiqlang.</div>'}
-    <div class="relation"><div class="rl">1. Fiks — davomat (ish kuni sukut bo‘yicha «kelgan»)</div><table><tbody>
-      <tr><td>Hisobga olingan kunlar</td><td class="right"><b>${r.presentDays}</b> / ${r.workDays} ish kuni${r.lateDays?` <span class="muted small">(${r.lateDays} kechikish)</span>`:''}</td></tr>
+    <div class="relation"><div class="rl">1. Fiks — ochilgan ish kunlari bo‘yicha</div><table><tbody>
+      <tr><td>Kelgan kunlar</td><td class="right"><b>${r.presentDays}</b> / ${r.workDays} ochilgan ish kuni${r.lateDays?` <span class="muted small">(${r.lateDays} kechikish)</span>`:''}</td></tr>
       ${r.absentDays?`<tr><td>Sababsiz / to‘lovsiz yo‘q</td><td class="right neg">-${r.absentDays} kun</td></tr>`:''}${r.paidAbsentDays?`<tr><td>Sababli (to‘lanadi)</td><td class="right">${r.paidAbsentDays} kun</td></tr>`:''}
       <tr><td>Fiks oylik (to‘liq)</td><td class="right money">${money(e.fix)}</td></tr>
       <tr style="border-top:1px solid var(--line2)"><td><b>Fiks (kelgan kunlarga mos)</b></td><td class="right money"><b>${money(r.fix)}</b></td></tr>
