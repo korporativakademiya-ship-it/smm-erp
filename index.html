@@ -210,7 +210,18 @@ h1{letter-spacing:-.025em}
 .rep-summary{background:var(--side);border:1px solid var(--line2);border-left:3px solid var(--accent);border-radius:8px;padding:14px 16px;font-size:14px;line-height:1.7}
 .wday.open{border-color:var(--green);background:linear-gradient(180deg,var(--greenbg),#fff)}
 @media(max-width:700px){.rep-kpis{grid-template-columns:1fr 1fr}}
-@media print{.report{max-width:100%}.rep-kpi{background:#fff}.rep-sec{break-inside:avoid}}
+@media print{
+  @page{margin:12mm}
+  *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+  .report{max-width:100%}
+  .rep-head{break-after:avoid}
+  .rep-kpis{break-inside:avoid}
+  .rep-sec{break-inside:avoid;margin-bottom:16px}
+  .rep-sec h3{break-after:avoid}
+  .rep-sec table tr{break-inside:avoid}
+  thead{display:table-header-group}
+  .rep-summary{break-inside:avoid}
+}
 /* mobile comfort */
 @media(max-width:860px){
   .btn{padding:10px 15px;font-size:14px}
@@ -364,6 +375,7 @@ function migrate(){
   if(!DB.audit)DB.audit=[];
   if(!DB.notifs)DB.notifs=[];
   if(!DB.workdays)DB.workdays={};
+  if(!s.reportCfg)s.reportCfg={kpis:true,attendance:true,attRole:true,attTime:true,doneTasks:true,notDoneTasks:true,taskContent:true,todayPosts:true,postProject:true,postPlatforms:true,tomorrow:true,summary:true};
   if(DB.updatedAt===undefined)DB.updatedAt=new Date().toISOString();
   if(DB.__v===undefined)DB.__v=0;
   if(!s.absenceTypes)s.absenceTypes=[{k:'absent',l:'Sababsiz yo‘q',paid:false},{k:'unpaid',l:'To‘lovsiz ta‘til',paid:false},{k:'sick',l:'Kasal (sababli)',paid:true},{k:'vacation',l:'Ta‘til (sababli)',paid:true}];
@@ -612,7 +624,7 @@ function contentCards(list){return `<div class="grid cards">${list.map(c=>{const
     <div class="flex sp" style="margin-top:11px"><div>${c.platforms.map(p=>`<span class="tag">${p}</span>`).join('')}</div><span class="chip ${done===c.tasks.length&&c.tasks.length?'green':'gray'} plain">✅ ${done}/${c.tasks.length}</span></div>
     <div class="muted small" style="margin-top:9px">📅 ${fmtDate(c.scheduled)}</div>
   </div>`;}).join('')||'<div class="muted">Kontent yo‘q.</div>'}</div>`;}
-const PROP_DEFS=[{k:'rubric',l:'Rubrika'},{k:'format',l:'Format'},{k:'status',l:'Holat'},{k:'progress',l:'Progress'},{k:'tasks',l:'Vazifa'},{k:'scheduled',l:'Chop sana'},{k:'responsible',l:'Mas\'ul'},{k:'platforms',l:'Platformalar'},{k:'goal',l:'Maqsad'}];
+const PROP_DEFS=[{k:'rubric',l:'Rubrika'},{k:'format',l:'Format'},{k:'status',l:'Holat'},{k:'progress',l:'Progress'},{k:'tasks',l:'Vazifa'},{k:'scheduled',l:'Chop sana'},{k:'deadline',l:'Deadline'},{k:'responsible',l:'Mas\'ul'},{k:'platforms',l:'Platformalar'},{k:'goal',l:'Maqsad'},{k:'hook',l:'HOOK'},{k:'cta',l:'CTA'}];
 let cProps={rubric:true,format:true,status:true,progress:true,tasks:true,scheduled:true,responsible:false,platforms:false,goal:false};
 function propsMenu(){openModal(`<h2>👁 Xossalar (property) <button class="x" onclick="closeModal()">×</button></h2>
   <div class="hint" style="margin-top:2px">Qaysi xossalar ko‘rinsin — Notion kabi tanlang. Jadval va Kalendarga ta'sir qiladi.</div>
@@ -625,9 +637,12 @@ function cCell(c,k){const pr=contentProgress(c),done=(c.tasks||[]).filter(t=>t.s
     case 'progress':return `<div class="flex nowrap" style="gap:8px"><div class="prog" style="flex:1"><i class="${pr===100?'full':''}" style="width:${pr}%"></i></div><span class="small muted">${pr}%</span></div>`;
     case 'tasks':return `${done}/${(c.tasks||[]).length}`;
     case 'scheduled':return fmtDate(c.scheduled);
+    case 'deadline':return fmtDate(c.deadline);
     case 'responsible':return esc((emp(c.responsibleId)||{}).name||'—');
     case 'platforms':return (c.platforms||[]).map(p=>`<span class="tag">${p}</span>`).join('')||'—';
     case 'goal':return esc(c.goal)||'—';
+    case 'hook':return esc(c.hook)||'—';
+    case 'cta':return esc(c.cta)||'—';
     default:return '';}}
 function contentTable(list){const cols=PROP_DEFS.filter(p=>cProps[p.k]);
   return `<div class="panel gridwrap"><table><thead><tr><th>Mavzu</th><th>Loyiha</th>${cols.map(c=>`<th${c.k==='progress'?' style="width:150px"':''}>${c.l}</th>`).join('')}</tr></thead><tbody>
@@ -824,8 +839,24 @@ function openWorkday(){const T=todayStr();DB.workdays=DB.workdays||{};DB.workday
 function closeWorkday(){const T=todayStr();if(!DB.workdays||!DB.workdays[T])return;if(!confirm('Ish kunini yopib, kunlik hisobot tayyorlansinmi?'))return;DB.workdays[T].closedAt=nowTime();logAudit('ish kuni yopildi',fmtDate(T));save();showDailyReport(T);}
 function reopenWorkday(){const T=todayStr();if(DB.workdays&&DB.workdays[T]){delete DB.workdays[T].closedAt;logAudit('ish kuni qayta ochildi',fmtDate(T));save();pageAttend();}}
 function attStatusLabel(st){return ({present:'✅ Keldi',late:'🟡 Kech keldi',absent:'🔴 Kelmadi',unpaid:'🔴 To‘lovsiz yo‘q',sick:'🟠 Kasal (sababli)',vacation:'🟠 Ta‘til (sababli)'})[st]||'⚪ Belgilanmagan';}
+function printAs(name){const old=document.title;document.title=name;const restore=()=>{document.title=old;window.removeEventListener('afterprint',restore);};window.addEventListener('afterprint',restore);setTimeout(()=>window.print(),60);}
+const REPORT_OPTS=[
+  {k:'kpis',l:'Yuqori ko‘rsatkichlar (KPI kartalar)'},
+  {k:'attendance',l:'Davomat jadvali'},
+  {k:'attRole',l:'   └ Lavozim ustuni',sub:1},
+  {k:'attTime',l:'   └ Kelgan vaqt ustuni',sub:1},
+  {k:'doneTasks',l:'Bajarilgan ishlar'},
+  {k:'notDoneTasks',l:'Bajarilmagan / kechikkan ishlar'},
+  {k:'taskContent',l:'   └ Vazifa qaysi kontentga tegishli',sub:1},
+  {k:'todayPosts',l:'Bugungi kontent (postlar)'},
+  {k:'postProject',l:'   └ Loyiha ustuni',sub:1},
+  {k:'postPlatforms',l:'   └ Platformalar (chiqdi/chiqmadi)',sub:1},
+  {k:'tomorrow',l:'Ertaga rejalashtirilgan'},
+  {k:'summary',l:'Xulosa'},
+];
 function showDailyReport(date){
   cur='attend';
+  const cfg=DB.settings.reportCfg||{};
   const staff=DB.employees.filter(e=>e.role!=='owner'&&e.role!=='admin'&&e.active!==false);
   const all=allTasks();
   const dueToday=all.filter(t=>t.deadline===date);
@@ -838,26 +869,34 @@ function showDailyReport(date){
   const present=staff.filter(e=>{const r=attRec(e.id,date);return r&&r.in;}).length;
   const postSlots=todayC.reduce((a,c)=>a+(c.platforms||[]).length,0);
   const postDone=todayC.reduce((a,c)=>a+(c.platforms||[]).filter(p=>c.published&&c.published[p]).length,0);
-  view(`<div class="topbar no-print"><button class="btn sec" onclick="pageAttend()">← Davomat</button><button class="btn" onclick="window.print()">🖨 PDF chiqarish</button></div>
+  const tcol=cfg.taskContent!==false;                              // vazifa tabllarida kontent ustuni
+  const taskTable=(list,withStatus)=>`<table><thead><tr><th>Vazifa</th>${tcol?'<th>Kontent</th>':''}<th>Xodim</th>${withStatus?'<th>Holat</th>':''}</tr></thead><tbody>${list.map(t=>`<tr><td>${esc(t.title)}</td>${tcol?`<td class="muted">${esc((t.content||{}).topic||'—')}</td>`:''}<td>${esc((emp(t.assigneeId)||{}).name||'—')}</td>${withStatus?`<td><span class="chip ${TSC[t.status]}">${t.status}</span></td>`:''}</tr>`).join('')}</tbody></table>`;
+  const sec=(on,html)=>on===false?'':html;
+  view(`<div class="topbar no-print"><button class="btn sec" onclick="pageAttend()">← Davomat</button><div class="flex"><button class="btn sec" onclick="reportSettings()">⚙️ Hisobot sozlamasi</button><button class="btn" onclick="printAs('Kunlik hisobot ${fmtDate(date)}')">🖨 PDF chiqarish</button></div></div>
   <div class="report">
     <div class="rep-head"><div><div class="rep-title">Kunlik hisobot</div><div class="rep-sub">${fmtDate(date)} · ${WEEKDAYS.find(w=>w.d===weekdayOf(date)).l} · SMM ERP</div></div>
       <div class="rep-meta">${wd.openedAt?`Ochilgan: ${wd.openedAt}`:''}${wd.closedAt?` · Yopilgan: ${wd.closedAt}`:''}</div></div>
-    <div class="rep-kpis">
+    ${sec(cfg.kpis,`<div class="rep-kpis">
       <div class="rep-kpi"><div class="rk-n">${present}/${staff.length}</div><div class="rk-l">Ishga keldi</div></div>
       <div class="rep-kpi"><div class="rk-n" style="color:var(--green)">${doneDue.length}</div><div class="rk-l">Vazifa bajarildi</div></div>
       <div class="rep-kpi"><div class="rk-n" style="color:var(--red)">${notDone.length}</div><div class="rk-l">Bajarilmadi</div></div>
       <div class="rep-kpi"><div class="rk-n">${postDone}/${postSlots}</div><div class="rk-l">Post chiqdi</div></div>
-    </div>
-    <div class="rep-sec"><h3>📋 Davomat</h3><table><thead><tr><th>Xodim</th><th>Lavozim</th><th>Holat</th><th>Kelgan vaqt</th></tr></thead><tbody>
-      ${staff.map(e=>{const r=attRec(e.id,date);const st=r?r.status:'';return `<tr><td><b>${esc(e.name)}</b></td><td class="muted">${ROLES[e.role]}</td><td>${attStatusLabel(st)}</td><td>${r&&r.in?r.in:'—'}</td></tr>`;}).join('')||'<tr><td colspan="4" class="muted">Xodim yo‘q</td></tr>'}
-    </tbody></table></div>
-    <div class="rep-sec"><h3>✅ Bajarilgan ishlar (${doneToday.length})</h3>${doneToday.length?`<table><thead><tr><th>Vazifa</th><th>Xodim</th><th>Kontent</th></tr></thead><tbody>${doneToday.map(t=>`<tr><td>${esc(t.title)}</td><td>${esc((emp(t.assigneeId)||{}).name||'—')}</td><td class="muted">${esc(t.content.topic)}</td></tr>`).join('')}</tbody></table>`:'<div class="muted small">Bugun tasdiqlangan ish yo‘q.</div>'}</div>
-    <div class="rep-sec"><h3>⏳ Bajarilmagan / kechikkan (bugun muddati)</h3>${notDone.length?`<table><thead><tr><th>Vazifa</th><th>Xodim</th><th>Holat</th></tr></thead><tbody>${notDone.map(t=>`<tr><td>${esc(t.title)}</td><td>${esc((emp(t.assigneeId)||{}).name||'—')}</td><td><span class="chip ${TSC[t.status]}">${t.status}</span></td></tr>`).join('')}</tbody></table>`:'<div class="muted small">Bugungi muddatli hamma ish bajarilgan 👍</div>'}</div>
-    <div class="rep-sec"><h3>📱 Bugungi kontent (postlar)</h3>${todayC.length?`<table><thead><tr><th>Mavzu</th><th>Loyiha</th><th>Platformalar</th></tr></thead><tbody>${todayC.map(c=>`<tr><td><b>${esc(c.topic)}</b></td><td class="muted">${esc((proj(c.projectId)||{}).name||'—')}</td><td>${(c.platforms||[]).map(p=>`<span class="chip ${c.published&&c.published[p]?'green':'red'} plain">${p} ${c.published&&c.published[p]?'✅':'❌'}</span>`).join(' ')}</td></tr>`).join('')}</tbody></table>`:'<div class="muted small">Bugunga rejalashtirilgan post yo‘q.</div>'}</div>
-    <div class="rep-sec"><h3>📅 Ertaga (${fmtDate(tm)})</h3>${tmC.length?`<table><thead><tr><th>Mavzu</th><th>Loyiha</th><th>Format</th><th>Platformalar</th></tr></thead><tbody>${tmC.map(c=>`<tr><td><b>${esc(c.topic)}</b></td><td class="muted">${esc((proj(c.projectId)||{}).name||'—')}</td><td>${esc(c.format)}</td><td>${(c.platforms||[]).map(p=>`<span class="tag">${p}</span>`).join('')||'—'}</td></tr>`).join('')}</tbody></table>`:'<div class="muted small">Ertaga uchun rejalashtirilgan kontent yo‘q.</div>'}</div>
-    <div class="rep-summary"><b>Xulosa:</b> Bugun ${present}/${staff.length} xodim ishga keldi. ${doneDue.length} vazifa bajarildi, ${notDone.length} tasi bajarilmadi. ${postSlots?`Rejadagi ${postSlots} postdan ${postDone} tasi chiqdi${postDone<postSlots?`, ${postSlots-postDone} tasi chiqmadi`:''}.`:'Bugunga post rejalashtirilmagan.'} Ertaga ${tmC.length} ta kontent rejalashtirilgan.</div>
+    </div>`)}
+    ${sec(cfg.attendance,`<div class="rep-sec"><h3>📋 Davomat</h3><table><thead><tr><th>Xodim</th>${cfg.attRole!==false?'<th>Lavozim</th>':''}<th>Holat</th>${cfg.attTime!==false?'<th>Kelgan vaqt</th>':''}</tr></thead><tbody>
+      ${staff.map(e=>{const r=attRec(e.id,date);const st=r?r.status:'';return `<tr><td><b>${esc(e.name)}</b></td>${cfg.attRole!==false?`<td class="muted">${ROLES[e.role]}</td>`:''}<td>${attStatusLabel(st)}</td>${cfg.attTime!==false?`<td>${r&&r.in?r.in:'—'}</td>`:''}</tr>`;}).join('')||`<tr><td colspan="4" class="muted">Xodim yo‘q</td></tr>`}
+    </tbody></table></div>`)}
+    ${sec(cfg.doneTasks,`<div class="rep-sec"><h3>✅ Bajarilgan ishlar (${doneToday.length})</h3>${doneToday.length?taskTable(doneToday,false):'<div class="muted small">Bugun tasdiqlangan ish yo‘q.</div>'}</div>`)}
+    ${sec(cfg.notDoneTasks,`<div class="rep-sec"><h3>⏳ Bajarilmagan / kechikkan (bugun muddati)</h3>${notDone.length?taskTable(notDone,true):'<div class="muted small">Bugungi muddatli hamma ish bajarilgan 👍</div>'}</div>`)}
+    ${sec(cfg.todayPosts,`<div class="rep-sec"><h3>📱 Bugungi kontent (postlar)</h3>${todayC.length?`<table><thead><tr><th>Mavzu</th>${cfg.postProject!==false?'<th>Loyiha</th>':''}${cfg.postPlatforms!==false?'<th>Platformalar</th>':''}</tr></thead><tbody>${todayC.map(c=>`<tr><td><b>${esc(c.topic)}</b></td>${cfg.postProject!==false?`<td class="muted">${esc((proj(c.projectId)||{}).name||'—')}</td>`:''}${cfg.postPlatforms!==false?`<td>${(c.platforms||[]).map(p=>`<span class="chip ${c.published&&c.published[p]?'green':'red'} plain">${p} ${c.published&&c.published[p]?'✅':'❌'}</span>`).join(' ')}</td>`:''}</tr>`).join('')}</tbody></table>`:'<div class="muted small">Bugunga rejalashtirilgan post yo‘q.</div>'}</div>`)}
+    ${sec(cfg.tomorrow,`<div class="rep-sec"><h3>📅 Ertaga (${fmtDate(tm)})</h3>${tmC.length?`<table><thead><tr><th>Mavzu</th><th>Loyiha</th><th>Format</th><th>Platformalar</th></tr></thead><tbody>${tmC.map(c=>`<tr><td><b>${esc(c.topic)}</b></td><td class="muted">${esc((proj(c.projectId)||{}).name||'—')}</td><td>${esc(c.format)}</td><td>${(c.platforms||[]).map(p=>`<span class="tag">${p}</span>`).join('')||'—'}</td></tr>`).join('')}</tbody></table>`:'<div class="muted small">Ertaga uchun rejalashtirilgan kontent yo‘q.</div>'}</div>`)}
+    ${sec(cfg.summary,`<div class="rep-summary"><b>Xulosa:</b> Bugun ${present}/${staff.length} xodim ishga keldi. ${doneDue.length} vazifa bajarildi, ${notDone.length} tasi bajarilmadi. ${postSlots?`Rejadagi ${postSlots} postdan ${postDone} tasi chiqdi${postDone<postSlots?`, ${postSlots-postDone} tasi chiqmadi`:''}.`:'Bugunga post rejalashtirilmagan.'} Ertaga ${tmC.length} ta kontent rejalashtirilgan.</div>`)}
   </div>`);
 }
+function reportSettings(){const cfg=DB.settings.reportCfg||(DB.settings.reportCfg={});
+  openModal(`<h2>⚙️ Kunlik hisobot sozlamasi <button class="x" onclick="closeModal()">×</button></h2>
+    <div class="hint" style="margin-top:2px">Hisobotda qaysi ma'lumotlar chiqishini tanlang. Qaysi birini tanlasangiz ham, PDF chiroyli va tartibli chop etiladi.</div>
+    <div style="margin-top:12px">${REPORT_OPTS.map(o=>`<label class="check" style="cursor:pointer;${o.sub?'padding-left:22px':''}"><input type="checkbox" ${cfg[o.k]!==false?'checked':''} onchange="DB.settings.reportCfg['${o.k}']=this.checked" style="width:auto"> ${o.l.trim()}</label>`).join('')}</div>
+    <div class="row" style="margin-top:16px"><button class="btn" onclick="save();closeModal();(cur==='attend'?showDailyReport(todayStr()):0)">Saqlash va ko‘rish</button><button class="btn sec" onclick="closeModal()">Yopish</button></div>`);}
 function attMenu(eid,dt){const e=emp(eid),r=DB.attendance.find(a=>a.employeeId===eid&&a.date===dt);
   openModal(`<h2>Davomat — ${esc(e.name)} <button class="x" onclick="closeModal();pageAttend()">×</button></h2>
     <div class="hint" style="margin-top:2px">${fmtDate(dt)}</div>
@@ -1167,6 +1206,9 @@ function pageSettings(){
   <div class="panel"><h2>🎁 Bonus tariflari (so'm)</h2>${BON_TARIFF.map(b=>`<div class="tarif-row"><span class="lb">${b.label} ${b.note?`<span class="muted small">— ${b.note}</span>`:''}</span><input type="number" value="${s.bonuses[b.key]}" onchange="setBon('${b.key}',+this.value)"></div>`).join('')}</div>
   <div class="panel"><h2>KPI vaznlari (%) <span class="chip ${kwSum===100?'green':'yellow'} plain">jami ${kwSum}%</span></h2>${KPI_CRIT.map(c=>`<div class="tarif-row"><span class="lb">${c.label} <span class="muted small">— ${c.desc}</span></span><input type="number" value="${kw[c.key]||0}" onchange="setKW('${c.key}',+this.value)" style="width:90px"></div>`).join('')}</div>
   <div class="panel"><h2>Formatlar</h2><div class="flex" style="flex-wrap:wrap;gap:6px;margin-bottom:8px">${s.formats.map((r,i)=>`<span class="chip purple">${r} <a onclick="delFmt(${i})" style="cursor:pointer">×</a></span>`).join('')}</div><div class="flex"><input id="new_fmt" placeholder="Yangi format"><button class="btn sm" onclick="addFmt()">+</button></div><div class="hint">Rubrikalar har loyihada alohida (Loyihalar menyusi).</div></div>
+  <div class="panel"><h2>📄 Kunlik hisobot (PDF)</h2>
+    <div class="hint" style="margin:0 0 10px">Kunlik hisobotда qaysi bo‘lim va ustunlar chiqishini o‘zingiz sozlang. Qaysi birini tanlasangiz ham PDF chiroyli chop etiladi. PDF nomi avtomatik hisobot sanasi bilan chiqadi.</div>
+    <button class="btn sec" onclick="reportSettings()">⚙️ Hisobot ustunlarini sozlash</button></div>
   <div class="panel"><h2 class="flex sp">🧾 Audit jurnali <span class="chip gray plain">${(DB.audit||[]).length} yozuv</span></h2>
     <div class="hint" style="margin:0 0 10px">Oylik, davomat va boshqa muhim o‘zgarishlar — kim, qachon.</div>
     <div class="gridwrap" style="max-height:300px;overflow:auto"><table><thead><tr><th>Vaqt</th><th>Kim</th><th>Amal</th><th>Nima</th></tr></thead><tbody>
