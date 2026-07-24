@@ -209,6 +209,8 @@ h1{letter-spacing:-.025em}
 .rep-sec table{border:1px solid var(--line);border-radius:8px;overflow:hidden}
 .rep-summary{background:var(--side);border:1px solid var(--line2);border-left:3px solid var(--accent);border-radius:8px;padding:14px 16px;font-size:14px;line-height:1.7}
 .wday.open{border-color:var(--green);background:linear-gradient(180deg,var(--greenbg),#fff)}
+.cboard{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(210px,300px);gap:12px;overflow-x:auto;padding-bottom:10px}
+.cboard .kcol{min-width:210px}
 @media(max-width:700px){.rep-kpis{grid-template-columns:1fr 1fr}}
 @media print{
   @page{margin:12mm}
@@ -381,6 +383,7 @@ function migrate(){
   if(!s.absenceTypes)s.absenceTypes=[{k:'absent',l:'Sababsiz yo‘q',paid:false},{k:'unpaid',l:'To‘lovsiz ta‘til',paid:false},{k:'sick',l:'Kasal (sababli)',paid:true},{k:'vacation',l:'Ta‘til (sababli)',paid:true}];
   if(!DB.locks)DB.locks={};                                        // davomat "to'liq" tasdig'i: {period:true}
   if(!s.scopeOwn)s.scopeOwn={mobilograf:true,smm:false};           // faqat o'z vazifa/hisobotini ko'radigan rollar
+  if(s.staffCanAssign===undefined)s.staffCanAssign=false;          // xodimlar ham vazifa biriktira oladimi (default: yo'q, faqat admin)
   DB.schema=2;
 }
 /* ---------- Storage (Google Sheets yoki localStorage) ---------- */
@@ -573,18 +576,27 @@ function pageDash(){
 function tblT(list){return `<table><thead><tr><th>Vazifa</th><th>Xodim</th><th>Kontent</th><th>Deadline</th></tr></thead><tbody>${list.map(t=>`<tr class="rowclick" onclick="viewTask('${t.id}')"><td>${esc(t.title)}</td><td>${emp(t.assigneeId)?.name||'—'}</td><td class="muted small">${esc(t.content.topic)}</td><td>${fmtDate(t.deadline)}</td></tr>`).join('')}</tbody></table>`;}
 
 /* ============================================================ KONTENT */
-let cFilter='all',cView='table';
+let cFilter='all',cView='table',cStatus='all';
 function pageContent(){
-  const opts=['<option value="all">Barcha loyihalar</option>'].concat(DB.projects.map(p=>`<option value="${p.id}" ${cFilter===p.id?'selected':''}>${p.name}</option>`)).join('');
-  let list=DB.contents.slice();if(cFilter!=='all')list=list.filter(c=>c.projectId===cFilter);
+  const opts=['<option value="all">Barcha loyihalar</option>'].concat(DB.projects.map(p=>`<option value="${p.id}" ${cFilter===p.id?'selected':''}>${esc(p.name)}</option>`)).join('');
+  const sOpts=['<option value="all">Barcha holatlar</option>'].concat(STATUSES.map(s=>`<option value="${s}" ${cStatus===s?'selected':''}>${s}</option>`)).join('');
+  let list=DB.contents.slice();if(cFilter!=='all')list=list.filter(c=>c.projectId===cFilter);if(cStatus!=='all')list=list.filter(c=>c.status===cStatus);
   const canEdit=currentUser.role==='admin'||currentUser.role==='smm';
   view(`<div class="topbar"><h1>Kontent reja</h1>
-    <div class="flex"><div class="seg"><button class="${cView==='table'?'active':''}" onclick="cView='table';pageContent()">Jadval</button><button class="${cView==='cards'?'active':''}" onclick="cView='cards';pageContent()">Kartochka</button><button class="${cView==='calendar'?'active':''}" onclick="cView='calendar';pageContent()">Kalendar</button></div>
-    ${cView!=='cards'?`<button class="btn sec sm" onclick="propsMenu()">👁 Xossalar</button>`:''}
+    <div class="flex"><div class="seg"><button class="${cView==='table'?'active':''}" onclick="cView='table';pageContent()">Jadval</button><button class="${cView==='board'?'active':''}" onclick="cView='board';pageContent()">Kanban</button><button class="${cView==='cards'?'active':''}" onclick="cView='cards';pageContent()">Kartochka</button><button class="${cView==='calendar'?'active':''}" onclick="cView='calendar';pageContent()">Kalendar</button></div>
+    ${cView==='table'||cView==='calendar'?`<button class="btn sec sm" onclick="propsMenu()">👁 Xossalar</button>`:''}
     <select style="width:auto" onchange="cFilter=this.value;pageContent()">${opts}</select>
+    <select style="width:auto" onchange="cStatus=this.value;pageContent()">${sOpts}</select>
     ${canEdit?`<button class="btn" onclick="editContent()">+ Yangi</button>`:''}</div></div>
-  ${cView==='cards'?contentCards(list):cView==='calendar'?contentCalendar(list):contentTable(list)}`);
+  ${cView==='cards'?contentCards(list):cView==='calendar'?contentCalendar(list):cView==='board'?contentBoard(list,canEdit):contentTable(list)}`);
 }
+function contentBoard(list,canEdit){
+  return `<div class="hint no-print" style="margin-bottom:10px">Kontentlar holat bo‘yicha ustunlarda.${canEdit?' Kartochkani sudrab holatini o‘zgartirishingiz mumkin.':''}</div>
+  <div class="cboard">${STATUSES.map(st=>{const items=list.filter(c=>c.status===st);return `<div class="kcol" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')" ondrop="dropContent(event,'${st}')"><h3><span class="chip ${STC[st]} plain">${st}</span> <span>${items.length}</span></h3>
+    ${items.map(c=>{const pr=contentProgress(c),done=(c.tasks||[]).filter(t=>t.status==='Tasdiqlandi').length;return `<div class="kcard" ${canEdit?'draggable="true"':''} ondragstart="event.dataTransfer.setData('cid','${c.id}')" onclick="viewContent('${c.id}')"><b>${esc(c.topic)||'(nomsiz)'}</b><div class="muted small" style="margin:4px 0">${esc((proj(c.projectId)||{}).name||'')} · ${esc(c.format)}</div><div class="prog" style="height:5px"><i class="${pr===100?'full':''}" style="width:${pr}%"></i></div><div class="flex sp" style="margin-top:6px"><span class="tag">${(c.tasks&&c.tasks.length)?done+'/'+c.tasks.length+' vazifa':'—'}</span><span class="small muted">${fmtDate(c.scheduled)}</span></div></div>`;}).join('')||'<div class="muted small" style="padding:6px 8px">—</div>'}
+  </div>`;}).join('')}</div>`;
+}
+function dropContent(ev,ns){ev.preventDefault();const cid=ev.dataTransfer.getData('cid');document.querySelectorAll('.kcol').forEach(k=>k.classList.remove('drag'));if(!cid)return;if(!(currentUser.role==='admin'||currentUser.role==='smm'))return;const c=DB.contents.find(x=>x.id===cid);if(c&&c.status!==ns){c.status=ns;logAudit('kontent holati',esc(c.topic)+' → '+ns);save();pageContent();}}
 let calMode='month',calDate=todayStr();
 function calShift(delta){const d=new Date(calDate);if(calMode==='month')d.setMonth(d.getMonth()+delta);else d.setDate(d.getDate()+delta*7);calDate=iso(d);pageContent();}
 function contentCalendar(list){
@@ -651,7 +663,7 @@ function contentTable(list){const cols=PROP_DEFS.filter(p=>cProps[p.k]);
 function viewContent(id){
   const c=DB.contents.find(x=>x.id===id);if(!c)return;
   const pr=contentProgress(c),kp=computeKpi(c),kpr=kpiPercent(c),w=DB.settings.kpiWeights;
-  const canEdit=currentUser.role==='admin'||currentUser.role==='smm';
+  const canEdit=currentUser.role==='admin'||currentUser.role==='smm';const canDel=isAdmin(),canAdd=canAssignTasks(),isClient=currentUser.role==='owner';
   openModal(`<h2>${esc(c.topic)||'Kontent'} <button class="x" onclick="closeModal()">×</button></h2>
     <div class="metarow">
       <div class="metaitem"><span class="ml">Holat</span><span class="chip ${STC[c.status]}">${c.status}</span></div>
@@ -673,25 +685,26 @@ function viewContent(id){
       <tr><td>Referens / Drive</td><td>${safeUrl(c.references)?`<a href="${safeUrl(c.references)}" target="_blank" rel="noopener">referens</a>`:'—'} · ${safeUrl(c.drive)?`<a href="${safeUrl(c.drive)}" target="_blank" rel="noopener">drive</a>`:'<span class="muted">yo‘q</span>'}</td></tr>
     </tbody></table>
     <div class="relation"><div class="rl">🔗 Bog‘liq vazifalar (${c.tasks.length})</div>
-      <div class="gridwrap"><table><thead><tr><th>Vazifa</th><th>Bajaruvchi</th><th>Deadline</th><th>Status</th><th>Link</th>${canEdit?'<th></th>':''}</tr></thead><tbody>
-      ${c.tasks.map(t=>`<tr class="rowclick" onclick="viewTask('${t.id}')"><td><b>${esc(t.title)}</b>${t.reworkCount?` <span class="chip red plain">↩${t.reworkCount}</span>`:''}${t.checklist&&t.checklist.length?` <span class="muted small">☑${t.checklist.filter(x=>x.done).length}/${t.checklist.length}</span>`:''}</td><td>${emp(t.assigneeId)?.name||'—'}</td><td>${fmtDate(t.deadline)} ${onTime(t)?'<span class="chip green plain">vaqtida</span>':(t.doneAt&&t.deadline&&t.doneAt>t.deadline?'<span class="chip red plain">kech</span>':'')}</td><td><span class="chip ${TSC[t.status]}">${t.status}</span></td><td>${safeUrl(t.link)?`<a href="${safeUrl(t.link)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">🔗</a>`:'—'}</td>${canEdit?`<td><button class="x" onclick="event.stopPropagation();delTask('${c.id}','${t.id}')">×</button></td>`:''}</tr>`).join('')||'<tr><td colspan="6" class="muted small">Vazifa yo‘q</td></tr>'}
+      <div class="gridwrap"><table><thead><tr><th>Vazifa</th><th>Bajaruvchi</th><th>Deadline</th><th>Status</th><th>Link</th>${canDel?'<th></th>':''}</tr></thead><tbody>
+      ${c.tasks.map(t=>`<tr class="rowclick" onclick="viewTask('${t.id}')"><td><b>${esc(t.title)}</b>${t.reworkCount?` <span class="chip red plain">↩${t.reworkCount}</span>`:''}${t.checklist&&t.checklist.length?` <span class="muted small">☑${t.checklist.filter(x=>x.done).length}/${t.checklist.length}</span>`:''}</td><td>${emp(t.assigneeId)?.name||'—'}</td><td>${fmtDate(t.deadline)} ${onTime(t)?'<span class="chip green plain">vaqtida</span>':(t.doneAt&&t.deadline&&t.doneAt>t.deadline?'<span class="chip red plain">kech</span>':'')}</td><td><span class="chip ${TSC[t.status]}">${t.status}</span></td><td>${safeUrl(t.link)?`<a href="${safeUrl(t.link)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">🔗</a>`:'—'}</td>${canDel?`<td><button class="x" onclick="event.stopPropagation();delTask('${c.id}','${t.id}')">×</button></td>`:''}</tr>`).join('')||'<tr><td colspan="6" class="muted small">Vazifa yo‘q</td></tr>'}
       </tbody></table></div>
-      ${canEdit?`<button class="btn sm sec" style="margin-top:10px" onclick="addTask('${c.id}')">+ Vazifa qo‘shish</button>`:''}
+      ${canAdd?`<button class="btn sm sec" style="margin-top:10px" onclick="addTask('${c.id}')">+ Vazifa qo‘shish</button>`:''}
     </div>
-    <h2 style="margin-top:18px" class="flex sp">KPI mezonlari <span class="chip ${kpr>=80?'green':kpr>=50?'yellow':'gray'}">${kpr}%</span></h2>
-    ${KPI_CRIT.map(cr=>`<div class="check"><span class="dot ${kp[cr.key]?'on':'off'}">${kp[cr.key]?'✓':''}</span><div><span>${cr.label}</span> <span class="muted small">(${w[cr.key]||0}%)</span></div></div>`).join('')}
+    ${!isClient?`<h2 style="margin-top:18px" class="flex sp">KPI mezonlari <span class="chip ${kpr>=80?'green':kpr>=50?'yellow':'gray'}">${kpr}%</span></h2>
+    ${KPI_CRIT.map(cr=>`<div class="check"><span class="dot ${kp[cr.key]?'on':'off'}">${kp[cr.key]?'✓':''}</span><div><span>${cr.label}</span> <span class="muted small">(${w[cr.key]||0}%)</span></div></div>`).join('')}`:''}
+    ${isClient?`<div class="relation" style="margin-top:16px"><div class="rl">Mijoz tasdig‘i</div>${c.status==='G‘oya'?'<span class="muted small">Hali g‘oya bosqichida — tayyor bo‘lgach tasdiqlaysiz.</span>':c.status==='Chop etilgan'?'<span class="chip green plain">chop etilgan</span>':c.clientApproval==='approved'?'<span class="chip green">✓ Siz tasdiqladingiz</span>':c.clientApproval==='rejected'?`<span class="chip red">✗ Siz rad etdingiz</span>${c.clientApprovalNote?` <span class="muted small">${esc(c.clientApprovalNote)}</span>`:''}`:`<div class="flex" style="gap:8px"><button class="btn" onclick="closeModal();clientApprove('${c.id}')">✓ Tasdiqlayman</button><button class="btn danger" onclick="closeModal();clientReject('${c.id}')">✗ Rad etaman</button></div>`}</div>`:''}
     ${canEdit?`<div class="row" style="margin-top:18px"><button class="btn sec" onclick="editContent('${c.id}')">Tahrirlash</button><button class="btn danger" onclick="delContent('${c.id}')">O‘chirish</button></div>`:''}`);
 }
-function delTask(cid,tid){const c=DB.contents.find(x=>x.id===cid);c.tasks=c.tasks.filter(t=>t.id!==tid);save();viewContent(cid);}
+function delTask(cid,tid){if(!isAdmin()){alert('Vazifani faqat admin o‘chira oladi.');return;}const c=DB.contents.find(x=>x.id===cid);c.tasks=c.tasks.filter(t=>t.id!==tid);logAudit('vazifa o‘chirildi','');save();viewContent(cid);}
 function delContent(id){if(!confirm('Kontent o‘chirilsinmi?'))return;DB.contents=DB.contents.filter(c=>c.id!==id);save();closeModal();pageContent();}
-function addTask(cid){const c=DB.contents.find(x=>x.id===cid);
+function addTask(cid){if(!canAssignTasks()){alert('Vazifa biriktirishga ruxsatingiz yo‘q — buni admin qiladi.');return;}const c=DB.contents.find(x=>x.id===cid);
   openModal(`<h2>Yangi vazifa <button class="x" onclick="viewContent('${cid}')">×</button></h2>
     <div class="hint" style="margin-top:2px">Kontent: <b>${esc(c.topic)}</b> · Checklist loyiha shablonidan olinadi.</div>
     <label>Vazifa turi</label><select id="t_part">${PARTS.map(p=>`<option>${p}</option>`).join('')}</select>
     <div class="row"><div><label>Bajaruvchi</label><select id="t_ass">${staffOpts()}</select></div><div><label>Kim beryapti</label><select id="t_by">${assignerOpts(currentUser.id)}</select></div></div>
     <label>Deadline</label><input id="t_dl" type="date" value="${todayStr()}">
     <div class="row" style="margin-top:16px"><button class="btn" onclick="saveTask('${cid}')">Qo‘shish</button><button class="btn sec" onclick="viewContent('${cid}')">Bekor</button></div>`);}
-function saveTask(cid){const c=DB.contents.find(x=>x.id===cid);const p=proj(c.projectId);c.tasks.push(mkTask(v('t_part'),v('t_ass'),v('t_by'),v('t_dl'),todayStr(),(p&&p.checklist)||[]));save();viewContent(cid);}
+function saveTask(cid){if(!canAssignTasks())return;const c=DB.contents.find(x=>x.id===cid);const p=proj(c.projectId);c.tasks.push(mkTask(v('t_part'),v('t_ass'),v('t_by'),v('t_dl'),todayStr(),(p&&p.checklist)||[]));logAudit('vazifa biriktirildi',esc((emp(v('t_ass'))||{}).name||''));save();viewContent(cid);}
 function rubricOptions(pid,sel){const p=proj(pid);const rs=(p&&p.rubrics&&p.rubrics.length)?p.rubrics:['(rubrika yo‘q)'];return rs.map(r=>`<option ${sel===r?'selected':''}>${r}</option>`).join('');}
 function refreshRubric(){document.getElementById('c_rub').innerHTML=rubricOptions(v('c_proj'));}
 function editContent(id){
@@ -743,7 +756,7 @@ function viewTask(tid){
     ${t.checklist&&t.checklist.length?`<div class="relation" style="margin-top:14px"><div class="rl">☑ Checklist (${chkDone}/${t.checklist.length})</div>${t.checklist.map((x,i)=>`<label class="check" style="cursor:pointer"><input type="checkbox" ${x.done?'checked':''} ${canSubmit?'':'disabled'} onchange="toggleCheck('${t.id}',${i})"> <span style="${x.done?'text-decoration:line-through;color:var(--muted)':''}">${esc(x.text)}</span></label>`).join('')}</div>`:''}
     ${t.reworkLog&&t.reworkLog.length?`<div class="relation" style="margin-top:14px"><div class="rl">↩ Qaytarish tarixi (${t.reworkLog.length})</div>${t.reworkLog.slice().reverse().map(rl=>`<div style="padding:6px 0;border-bottom:1px solid var(--line)"><div>${esc(rl.reason)||'<span class="muted">sabab yozilmagan</span>'}</div><div class="muted small">${esc(rl.by)} · ${fmtTs(rl.ts)}</div></div>`).join('')}</div>`:''}
     ${taskActions(t,c)}
-    ${canManage?`<div class="row" style="margin-top:18px"><button class="btn sec" onclick="editTask('${t.id}')">Tahrirlash</button><button class="btn danger" onclick="delTask('${c.id}','${t.id}');closeModal()">O‘chirish</button></div>`:''}`);
+    ${(canAssignTasks()||isAdmin())?`<div class="row" style="margin-top:18px">${canAssignTasks()?`<button class="btn sec" onclick="editTask('${t.id}')">Tahrirlash</button>`:''}${isAdmin()?`<button class="btn danger" onclick="delTask('${c.id}','${t.id}');closeModal()">O‘chirish</button>`:''}</div>`:''}`);
 }
 function taskActions(t,c){
   const isMine=t.assigneeId===currentUser.id,mgr=currentUser.role==='admin'||currentUser.role==='smm';
@@ -775,18 +788,20 @@ function advanceTask(tid){const f=findTask(tid);if(!f)return;const s=f.t.status;
   if(s==='Yangi'){if(moveTask(tid,'Jarayonda'))pageTasks();}
   else if(s==='Jarayonda'){viewTask(tid);}                        // ish havolasi kiritish uchun modal ochiladi
   else if(s==='Tekshiruvda'){if(moveTask(tid,'Tasdiqlandi')){const f2=findTask(tid);if(f2)notify(f2.t.assigneeId,'✓ Vazifangiz tasdiqlandi: «'+f2.t.title+'».');pageTasks();}}}
-function editTask(tid){const f=findTask(tid);if(!f)return;const{t}=f;
+function editTask(tid){if(!canAssignTasks()){alert('Vazifani tahrirlashga ruxsatingiz yo‘q.');return;}const f=findTask(tid);if(!f)return;const{t}=f;
   openModal(`<h2>Vazifani tahrirlash <button class="x" onclick="viewTask('${tid}')">×</button></h2>
     <label>Nomi</label><input id="et_title" value="${esc(t.title)}">
     <div class="row"><div><label>Turi</label><select id="et_part">${PARTS.map(p=>`<option ${t.part===p?'selected':''}>${p}</option>`).join('')}</select></div><div><label>Status</label><select id="et_status">${TASK_STATUS.map(s=>`<option ${t.status===s?'selected':''}>${s}</option>`).join('')}</select></div></div>
     <div class="row"><div><label>Bajaruvchi</label><select id="et_ass">${staffOpts(t.assigneeId)}</select></div><div><label>Kim berdi</label><select id="et_by">${assignerOpts(t.createdBy)}</select></div></div>
     <label>Deadline</label><input id="et_dl" type="date" value="${t.deadline}">
     <div class="row" style="margin-top:16px"><button class="btn" onclick="saveTaskEdit('${tid}')">Saqlash</button><button class="btn sec" onclick="viewTask('${tid}')">Bekor</button></div>`);}
-function saveTaskEdit(tid){const f=findTask(tid);if(!f)return;const{t}=f;t.title=v('et_title');t.part=v('et_part');t.assigneeId=v('et_ass');t.createdBy=v('et_by');t.deadline=v('et_dl');const ns=v('et_status');if(ns!=='Tasdiqlandi'&&t.status==='Tasdiqlandi')t.doneAt='';if(ns==='Tasdiqlandi'&&!t.doneAt)t.doneAt=todayStr();t.status=ns;save();viewTask(tid);refresh();}
+function saveTaskEdit(tid){if(!canAssignTasks())return;const f=findTask(tid);if(!f)return;const{t}=f;t.title=v('et_title');t.part=v('et_part');t.assigneeId=v('et_ass');t.createdBy=v('et_by');t.deadline=v('et_dl');const ns=v('et_status');if(ns!=='Tasdiqlandi'&&t.status==='Tasdiqlandi')t.doneAt='';if(ns==='Tasdiqlandi'&&!t.doneAt)t.doneAt=todayStr();t.status=ns;save();viewTask(tid);refresh();}
 
 /* ============================================================ VAZIFALAR */
 let kDay=todayStr(),kAss='all',kMode='all';
 function scopeOwn(){return currentUser.role!=='admin';}   // admindan tashqari har kim faqat o'z ishini ko'radi
+function canAssignTasks(){return currentUser.role==='admin'||(DB.settings.staffCanAssign&&(currentUser.role==='smm'||currentUser.role==='mobilograf'));} // vazifa biriktirish huquqi
+function isAdmin(){return currentUser.role==='admin';}
 function pageTasks(){
   const onlyMine=scopeOwn();
   const eO=['<option value="all">Barcha xodimlar</option>'].concat(DB.employees.filter(e=>e.role!=='admin'&&e.role!=='owner').map(e=>`<option value="${e.id}" ${kAss===e.id?'selected':''}>${e.name}</option>`)).join('');
@@ -1156,6 +1171,7 @@ function saveProj(id){const team=[...document.querySelectorAll('.p_team:checked'
 function delProj(id){if(!confirm('O‘chirilsinmi?'))return;DB.projects=DB.projects.filter(p=>p.id!==id);save();closeModal();pageProjects();}
 
 /* ============================================================ MEHMON KO'RINISHI */
+let oView='table',oStatus='all';
 function ownerView(pid){
   const p=proj(pid);if(!p)return;closeModal();
   const cs=DB.contents.filter(c=>c.projectId===p.id);const last=(p.metrics||[]).slice(-1)[0];const ideas=cs.filter(c=>c.status==='G‘oya'||c.status==='Tasdiqlangan');
@@ -1164,14 +1180,12 @@ function ownerView(pid){
   view(`<div class="topbar no-print">${back}<div class="flex"><button class="btn" onclick="addIdea('${p.id}')">💡 G‘oya qo‘shish</button>${isClient?`<button class="btn sec" onclick="logout()">Chiqish</button>`:''}<button class="btn sec" onclick="window.print()">🖨 PDF</button></div></div>
   <div class="owner-head"><div style="font-size:13px;opacity:.9">Loyiha egasi ko‘rinishi</div><h1 style="color:#fff;margin:4px 0">${esc(p.name)}</h1><div style="opacity:.92">${esc(ownerName(p))} · ${fmtDate(todayStr())}</div></div>
   ${last?`<div class="grid cards" style="margin-bottom:18px"><div class="card stat"><div class="n">${money(last.reach)}</div><div class="l">Erishish (reach)</div></div><div class="card stat"><div class="n">${money(last.subs)}</div><div class="l">Obunachilar</div></div><div class="card stat"><div class="n">${last.engagement}%</div><div class="l">Engagement</div></div><div class="card stat"><div class="n">${cs.filter(c=>c.status==='Chop etilgan').length}</div><div class="l">Chop etilgan</div></div></div>`:''}
-  <div class="panel gridwrap"><h2>Kontent reja va g‘oyalar</h2><table><thead><tr><th>Mavzu</th><th>Rubrika</th><th>Holat</th><th style="width:150px">Progress</th><th>Chop sana</th><th>Sizning tasdig‘ingiz</th></tr></thead><tbody>${cs.map(c=>{const pr=contentProgress(c),ca=c.clientApproval;
-    const app=c.status==='G‘oya'?'<span class="muted small">g‘oya</span>'
-      :c.status==='Chop etilgan'?'<span class="chip green plain">chop etilgan</span>'
-      :ca==='approved'?'<span class="chip green plain">✓ tasdiqladingiz</span>'
-      :ca==='rejected'?`<span class="chip red plain">✗ rad etdingiz</span>${c.clientApprovalNote?` <span class="muted small">${esc(c.clientApprovalNote)}</span>`:''}`
-      :`<button class="btn sm" onclick="clientApprove('${c.id}')">✓ Tasdiqlash</button> <button class="btn sm danger" onclick="clientReject('${c.id}')">✗ Rad</button>`;
-    return `<tr><td><b>${esc(c.topic)}</b>${c.ideaBy?' <span class="chip purple plain">mening g‘oyam</span>':''}${c.goal?`<div class="muted small">${esc(c.goal)}</div>`:''}</td><td>${esc(c.rubric)}</td><td><span class="chip ${STC[c.status]}">${c.status}</span></td><td><div class="flex nowrap" style="gap:8px"><div class="prog" style="flex:1"><i class="${pr===100?'full':''}" style="width:${pr}%"></i></div><span class="small muted">${pr}%</span></div></td><td>${fmtDate(c.scheduled)}</td><td>${app}</td></tr>`;}).join('')||'<tr><td colspan="6" class="muted">Hali kontent yo‘q. «💡 G‘oya qo‘shish» orqali taklif kiriting.</td></tr>'}</tbody></table>
-    <div class="hint">💡 G‘oyalaringiz shu jadvalda «G‘oya» holatida chiqadi. Tayyor kontentni <b>Tasdiqlash</b> yoki <b>Rad etish</b> mumkin — mas'ul xodimga darhol xabar boradi.</div></div>`);
+  <div class="flex sp" style="margin:8px 0 12px;flex-wrap:wrap;gap:10px">
+    <div class="seg"><button class="${oView==='table'?'active':''}" onclick="oView='table';ownerView('${p.id}')">Jadval</button><button class="${oView==='board'?'active':''}" onclick="oView='board';ownerView('${p.id}')">Kanban</button><button class="${oView==='calendar'?'active':''}" onclick="oView='calendar';ownerView('${p.id}')">Kalendar</button></div>
+    <select style="width:auto" onchange="oStatus=this.value;ownerView('${p.id}')">${['<option value="all">Barcha holatlar</option>'].concat(STATUSES.map(s=>`<option value="${s}" ${oStatus===s?'selected':''}>${s}</option>`)).join('')}</select>
+  </div>
+  ${(()=>{const fl=oStatus==='all'?cs:cs.filter(c=>c.status===oStatus);return oView==='calendar'?contentCalendar(fl):oView==='board'?contentBoard(fl,false):contentTable(fl);})()}
+  <div class="hint" style="margin-top:10px">💡 Kontentга bosсangiz — bajarilishини (vazifalar) ko‘rasiz va <b>Tasdiqlash / Rad etish</b> qilasiz. G‘oyalaringiz «G‘oya» holатида chiqadi.</div>`);
 }
 function clientApprove(cid){const c=DB.contents.find(x=>x.id===cid);if(!c)return;c.clientApproval='approved';c.clientApprovalNote='';logAudit('mijoz tasdiqladi',esc(c.topic));notify(c.responsibleId,'✅ Mijoz «'+c.topic+'» kontentini tasdiqladi.');save();ownerView(c.projectId);}
 function clientReject(cid){const c=DB.contents.find(x=>x.id===cid);if(!c)return;rejectReason('Kontentni rad etish sababi',reason=>{c.clientApproval='rejected';c.clientApprovalNote=reason;logAudit('mijoz rad etdi',esc(c.topic));notify(c.responsibleId,'❌ Mijoz «'+c.topic+'» kontentini rad etdi. Sabab: '+(reason||'—'));save();ownerView(c.projectId);});}
@@ -1201,7 +1215,9 @@ function pageSettings(){
     <div class="gridwrap"><table class="perm-tbl"><thead><tr><th>Bo‘lim</th>${permRoles.map(r=>`<th>${ROLES[r]}</th>`).join('')}<th>Admin</th></tr></thead><tbody>
     ${permPages.map(pg=>`<tr><td>${PAGE_LABELS[pg]}</td>${permRoles.map(r=>`<td><input type="checkbox" ${(s.permissions[r]||[]).includes(pg)?'checked':''} onchange="togglePerm('${r}','${pg}',this.checked)"></td>`).join('')}<td><input type="checkbox" checked disabled></td></tr>`).join('')}
     </tbody></table></div>
-    <div class="hint" style="margin-top:12px"><b>Ko‘rinish doirasi:</b> admindan tashqari har bir xodim Vazifalar, Dashboard va Hisobotда <b>faqat o‘zining</b> ishini ko‘radi. Admin hammani ko‘radi va boshqaradi.</div></div>
+    <div class="hint" style="margin-top:12px"><b>Ko‘rinish doirasi:</b> admindan tashqari har bir xodim Vazifalar, Dashboard va Hisobotда <b>faqat o‘zining</b> ishini ko‘radi. Admin hammani ko‘radi va boshqaradi.</div>
+    <div class="hint" style="margin-top:12px"><b>Vazifa biriktirish:</b> odatda faqat <b>admin</b> vazifa beradi va o‘chiradi (xodim o‘ziga berilgan vazifani o‘chira olmaydi).</div>
+    <label class="check" style="cursor:pointer;margin-top:4px"><input type="checkbox" ${s.staffCanAssign?'checked':''} onchange="setS('staffCanAssign',this.checked)" style="width:auto"> Xodimlar ham bir-biriga (yoki o‘ziga) vazifa biriktira olsin</label></div>
   <div class="panel"><h2>Ish vaqti va jadval</h2><div class="row"><div><label>Ish boshlanishi</label><input type="time" value="${s.workStart}" onchange="setS('workStart',this.value)"></div><div><label>Kechikish ruxsati (daq)</label><input type="number" value="${s.lateThreshold}" onchange="setS('lateThreshold',+this.value)"></div><div><label>Jarima chegara (%)</label><input type="number" value="${s.legalCapPct}" onchange="setS('legalCapPct',+this.value)"></div></div>
     <label>Ish kunlari</label><div class="switch">${WEEKDAYS.map(w=>`<label><input type="checkbox" ${s.workDays.includes(w.d)?'checked':''} onchange="toggleWD(${w.d})"> ${w.l}</label>`).join('')}</div></div>
   <div class="panel"><h2>💵 Jarima tariflari (so'm)</h2>${PEN_TARIFF.map(r=>`<div class="tarif-row"><span class="lb">${r.label} ${r.note?`<span class="muted small">— ${r.note}</span>`:''}</span><input type="number" value="${s.penalties[r.key]}" onchange="setPen('${r.key}',+this.value)"></div>`).join('')}</div>
