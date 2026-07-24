@@ -304,7 +304,7 @@ function migrate(){
   const oldRub=s.rubrics||['Mahsulot','Ta‘limiy','Ko‘ngilochar'];
   (DB.projects||[]).forEach(p=>{if(!p.team)p.team=DB.employees.filter(e=>e.role==='mobilograf'||e.role==='smm').map(e=>e.id);if(!p.rubrics)p.rubrics=oldRub.slice();if(!p.checklist)p.checklist=['Ssenariy tayyor','Montaj qilindi','Tasdiqlandi'];if(!p.targets)p.targets={reach:15,subs:5,engagement:3};if(!p.metrics)p.metrics=[];
     if(!p.ownerId){const o=DB.employees.find(e=>e.role==='owner'&&e.projectId===p.id);if(o)p.ownerId=o.id;}
-    if(p.projectPay!==undefined)delete p.projectPay;if(p.kpiPay!==undefined)delete p.kpiPay;});
+    if(p.projectPay!==undefined)delete p.projectPay;if(p.kpiPay!==undefined)delete p.kpiPay;if(!p.assignMap)p.assignMap={};});
   if(s.rubrics)delete s.rubrics;
   let adminExists=false;
   (DB.employees||[]).forEach((e,i)=>{if(e.active===undefined)e.active=true;if(!e.login)e.login=e.role==='admin'?'admin':((e.name||'user').toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,10)||('user'+i));if(!e.pin)e.pin=e.role==='admin'?'1234':String(1000+i);
@@ -457,11 +457,18 @@ function onTime(t){return t&&t.doneAt&&t.deadline&&t.doneAt<=t.deadline;}
 const PART_STAGE={Ssenariy:'Ssenariy',Syomka:'Syomka',Montaj:'Montaj',Dizayn:'Montaj',Joylash:'Tayyor'};
 function chainForFormat(fmt){const video=/reels|video|youtube|tiktok|montaj|klip/i.test(fmt||'');
   return video?['Ssenariy','Syomka','Montaj','Joylash']:['Dizayn','Joylash'];}
-function assignForPart(part,d,p){                                   // rolga qarab biriktiradi (keyin qo'lda tahrirlash mumkin)
-  const team=((p&&p.team)||[]).map(id=>emp(id)).filter(Boolean);
-  const mob=team.find(e=>e.role==='mobilograf');
-  if((part==='Syomka'||part==='Montaj')&&mob)return mob.id;        // syomka/montaj — mobilografga
-  return d.responsibleId||(team[0]&&team[0].id)||'';}              // ssenariy/dizayn/joylash — mas'ul
+function teamByRole(p,role){const t=((p&&p.team)||[]).map(id=>emp(id)).filter(Boolean);return (t.find(e=>e.role===role)||{}).id||'';}
+function assignForTask(part,platform,d,p){                          // 1) loyiha sozlamasi (assignMap) 2) default qoida 3) mas'ul
+  const map=(p&&p.assignMap)||{};
+  const key=(part==='Joylash'&&platform)?('Joylash:'+platform):part;
+  if(map[key])return map[key];
+  if(map[part])return map[part];
+  if(part==='Syomka'||part==='Montaj')return teamByRole(p,'mobilograf')||d.responsibleId||'';
+  if(part==='Joylash'&&platform==='Instagram')return teamByRole(p,'mobilograf')||d.responsibleId||'';
+  if(part==='Joylash'&&platform==='Telegram')return teamByRole(p,'smm')||d.responsibleId||'';
+  return d.responsibleId||teamByRole(p,'smm')||((p&&p.team&&p.team[0])||''); // Ssenariy/Dizayn/boshqa Joylash
+}
+const ASSIGN_ROWS=[{k:'Ssenariy',l:'Ssenariy (ssenariy yozish)'},{k:'Syomka',l:'Syomka'},{k:'Montaj',l:'Montaj'},{k:'Dizayn',l:'Dizayn'},{k:'Joylash:Instagram',l:'Joylash — Instagram'},{k:'Joylash:Telegram',l:'Joylash — Telegram'},{k:'Joylash:TikTok',l:'Joylash — TikTok'},{k:'Joylash:YouTube',l:'Joylash — YouTube'},{k:'Joylash',l:'Joylash — boshqa platformalar'}];
 function approverOf(t){                                            // tasdiqlovchi: vazifani yaratgan; agar u bajaruvchining o'zi bo'lsa — admin
   if(t.createdBy&&t.createdBy!==t.assigneeId)return t.createdBy;
   const a=DB.employees.find(e=>e.role==='admin');return a?a.id:'';}
@@ -644,8 +651,8 @@ function saveContent(id){
   if(id){const c=DB.contents.find(x=>x.id===id);Object.assign(c,d);const np={};platforms.forEach(p=>np[p]=c.published&&c.published[p]||false);c.published=np;save();viewContent(id);}
   else{const pub={};platforms.forEach(p=>pub[p]=false);const by=currentUser.id;const p=proj(d.projectId);
     const sched=d.scheduled||d.deadline,chain=chainForFormat(d.format),jtasks=[];
-    chain.forEach((part,idx)=>{if(part==='Joylash'){const list=platforms.length?platforms:[null];list.forEach(pl=>jtasks.push(mkTask('Joylash',assignForPart('Joylash',d,p),by,sched,todayStr(),(p&&p.checklist)||[],pl||undefined)));}
-      else{const dl=sched?shiftDate(sched,-(chain.length-1-idx)):d.deadline;jtasks.push(mkTask(part,assignForPart(part,d,p),by,dl,todayStr(),(part==='Montaj'&&p&&p.checklist)||[]));}});
+    chain.forEach((part,idx)=>{if(part==='Joylash'){const list=platforms.length?platforms:[null];list.forEach(pl=>jtasks.push(mkTask('Joylash',assignForTask('Joylash',pl,d,p),by,sched,todayStr(),(p&&p.checklist)||[],pl||undefined)));}
+      else{const dl=sched?shiftDate(sched,-(chain.length-1-idx)):d.deadline;jtasks.push(mkTask(part,assignForTask(part,null,d,p),by,dl,todayStr(),(part==='Montaj'&&p&&p.checklist)||[]));}});
     DB.contents.push({id:uid(),...d,published:pub,tasks:jtasks});logAudit('kontent yaratildi',esc(d.topic)+' ('+jtasks.length+' vazifa)');save();closeModal();pageContent();}
 }
 function v(id){return document.getElementById(id).value;}
@@ -981,7 +988,7 @@ function viewProject(id){
       ${canEdit?`<button class="btn sm sec" style="margin-top:10px" onclick="addMetric('${p.id}')">+ O‘sish qayd etish</button>`:''}
       ${ms.length>1?`<div class="gridwrap" style="margin-top:10px"><table><thead><tr><th>Oy</th><th>Reach</th><th>Obunachi</th><th>ER</th></tr></thead><tbody>${ms.slice().reverse().map(m=>`<tr><td>${fmtMonth(m.month)}</td><td>${money(m.reach)}</td><td>${money(m.subs)}</td><td>${m.engagement}%</td></tr>`).join('')}</tbody></table></div>`:''}
     </div>
-    <table class="kv" style="margin-top:14px"><tbody><tr><td>Jamoa (to‘lov xodim kartochkasida)</td><td>${(p.team||[]).map(id=>{const m=emp(id);return m?`<span class="tag">${m.name} · ${money(m.payPerProject)}+${money(m.kpiPerProject)}</span>`:'';}).filter(Boolean).join('')||'—'}</td></tr><tr><td>Rubrikalar</td><td>${(p.rubrics||[]).map(r=>`<span class="tag">${r}</span>`).join('')||'—'}</td></tr><tr><td>Task checklist</td><td>${(p.checklist||[]).map(r=>`<span class="tag">☑ ${r}</span>`).join('')||'—'}</td></tr><tr><td>Kontent</td><td>${cs.length} ta · ${cs.filter(c=>c.status==='Chop etilgan').length} chop etilgan</td></tr></tbody></table>
+    <table class="kv" style="margin-top:14px"><tbody><tr><td>Jamoa (to‘lov xodim kartochkasida)</td><td>${(p.team||[]).map(id=>{const m=emp(id);return m?`<span class="tag">${m.name} · ${money(m.payPerProject)}+${money(m.kpiPerProject)}</span>`:'';}).filter(Boolean).join('')||'—'}</td></tr><tr><td>Rubrikalar</td><td>${(p.rubrics||[]).map(r=>`<span class="tag">${r}</span>`).join('')||'—'}</td></tr><tr><td>Task checklist</td><td>${(p.checklist||[]).map(r=>`<span class="tag">☑ ${r}</span>`).join('')||'—'}</td></tr><tr><td>Vazifa biriktirish</td><td>${(()=>{const am=p.assignMap||{};const rows=ASSIGN_ROWS.filter(r=>am[r.k]).map(r=>`<span class="tag">${r.l.split(' ')[0]==='Joylash'?r.l.replace('Joylash — ','TG/IG: '):r.l.split(' ')[0]} → ${esc((emp(am[r.k])||{}).name||'?')}</span>`);return rows.length?rows.join(''):'<span class="muted small">avtomatik (rol bo‘yicha)</span>';})()}</td></tr><tr><td>Kontent</td><td>${cs.length} ta · ${cs.filter(c=>c.status==='Chop etilgan').length} chop etilgan</td></tr></tbody></table>
     <div class="row" style="margin-top:18px"><button class="btn" onclick="ownerView('${p.id}')">👁 Mehmon ko‘rinishi</button>${canEdit?`<button class="btn sec" onclick="editProj('${p.id}')">Tahrirlash</button><button class="btn danger" onclick="delProj('${p.id}')">O‘chirish</button>`:''}</div>`);
 }
 function addMetric(pid){const p=proj(pid);
@@ -995,12 +1002,18 @@ function editProj(id){const p=id?proj(id):null;
     <div class="row"><div><label>Loyiha nomi</label><input id="p_name" value="${p?esc(p.name):''}"></div><div><label>Loyiha egasi (mijoz)</label><select id="p_ownerId">${clientOptions(p?p.ownerId:'')}</select></div></div>
     <div class="hint" style="margin-top:6px">💡 «Loyiha egasi»ga <b>Mijoz</b> tanlansa — u avtomatik shu loyiha rahbari bo‘ladi va login+PIN bilan kirib faqat shu loyihani ko‘radi. Mijozni <b>Foydalanuvchilar</b> bo‘limida yarating. To‘lov/KPI esa xodim kartochkasida.</div>
     <label>Jamoa (kim ishlaydi va to‘lov oladi)</label><div class="switch">${DB.employees.filter(e=>e.role==='mobilograf'||e.role==='smm').map(e=>`<label><input type="checkbox" class="p_team" value="${e.id}" ${p&&(p.team||[]).includes(e.id)?'checked':''}> ${e.name}</label>`).join('')}</div>
+    <div class="relation" style="margin-top:12px"><div class="rl">🧑‍💼 Vazifa biriktirish — kim qaysi ishni bajaradi</div>
+      <div class="hint" style="margin-top:0;margin-bottom:8px">Bo‘sh qoldirilsa avtomatik: Syomka/Montaj/Instagram → mobilograf, Telegram → SMM. Bu yerda tanlasangiz — shu loyihaga kontent yaratilganda o‘sha vazifalar <b>doim shu odamga</b> boradi.</div>
+      ${(()=>{const am=(p&&p.assignMap)||{};const opts=sel=>'<option value="">— avtomatik —</option>'+DB.employees.filter(e=>e.role==='smm'||e.role==='mobilograf').map(e=>`<option value="${e.id}" ${sel===e.id?'selected':''}>${esc(e.name)} · ${ROLES[e.role]}</option>`).join('');return ASSIGN_ROWS.map(row=>`<div class="tarif-row"><span class="lb">${row.l}</span><select class="am_sel" data-key="${row.k}" style="width:210px">${opts(am[row.k])}</select></div>`).join('');})()}
+    </div>
     <div class="row"><div><label>Maqsad Reach %</label><input id="p_tr" type="number" value="${p?p.targets.reach:15}"></div><div><label>Obunachi %</label><input id="p_ts" type="number" value="${p?p.targets.subs:5}"></div><div><label>ER %</label><input id="p_te" type="number" step="0.1" value="${p?p.targets.engagement:3}"></div></div>
     <label>Rubrikalar (vergul bilan)</label><input id="p_rub" value="${p?esc((p.rubrics||[]).join(', ')):'Mahsulot, Ta‘limiy, Ko‘ngilochar'}">
     <label>Task checklist shabloni (vergul bilan)</label><input id="p_chk" value="${p?esc((p.checklist||[]).join(', ')):'Ssenariy tayyor, Montaj qilindi, Tasdiqlandi'}">
     <div class="row" style="margin-top:16px"><button class="btn" onclick="saveProj('${id||''}')">Saqlash</button><button class="btn sec" onclick="${p?`viewProject('${id}')`:'closeModal()'}">Bekor</button></div>`);}
 function clientOptions(sel){const cs=DB.employees.filter(e=>e.role==='owner');if(!cs.length)return '<option value="">(avval «Mijoz» yarating)</option>';return '<option value="">— tanlanmagan —</option>'+cs.map(c=>`<option value="${c.id}" ${sel===c.id?'selected':''}>${c.name}</option>`).join('');}
-function saveProj(id){const team=[...document.querySelectorAll('.p_team:checked')].map(x=>x.value);const rubrics=v('p_rub').split(',').map(s=>s.trim()).filter(Boolean);const checklist=v('p_chk').split(',').map(s=>s.trim()).filter(Boolean);const ownerId=v('p_ownerId');const d={name:v('p_name'),ownerId,owner:ownerId?(emp(ownerId)?emp(ownerId).name:''):'',team,rubrics,checklist,targets:{reach:+v('p_tr')||0,subs:+v('p_ts')||0,engagement:+v('p_te')||0}};if(id){Object.assign(proj(id),d);save();viewProject(id);}else{DB.projects.push({id:uid(),...d,metrics:[]});save();closeModal();pageProjects();}}
+function saveProj(id){const team=[...document.querySelectorAll('.p_team:checked')].map(x=>x.value);const rubrics=v('p_rub').split(',').map(s=>s.trim()).filter(Boolean);const checklist=v('p_chk').split(',').map(s=>s.trim()).filter(Boolean);const ownerId=v('p_ownerId');
+  const assignMap={};document.querySelectorAll('.am_sel').forEach(s=>{if(s.value)assignMap[s.dataset.key]=s.value;});
+  const d={name:v('p_name'),ownerId,owner:ownerId?(emp(ownerId)?emp(ownerId).name:''):'',team,rubrics,checklist,assignMap,targets:{reach:+v('p_tr')||0,subs:+v('p_ts')||0,engagement:+v('p_te')||0}};if(id){Object.assign(proj(id),d);save();viewProject(id);}else{DB.projects.push({id:uid(),...d,metrics:[]});save();closeModal();pageProjects();}}
 function delProj(id){if(!confirm('O‘chirilsinmi?'))return;DB.projects=DB.projects.filter(p=>p.id!==id);save();closeModal();pageProjects();}
 
 /* ============================================================ MEHMON KO'RINISHI */
