@@ -452,7 +452,7 @@ function subscribeRealtime(){if(!CLOUD)return;setInterval(async()=>{
     if(j&&j.db&&validDB(j.db))j=j.db;
     if(validDB(j)){cloudRisky=false;if(j.__v!=null)cloudVersion=j.__v;const s=stable(j);
       if(s!==stable(DB)&&s!==lastPush){
-        if(dirty){DB=mergeDB(j,DB);cloudVersion=(j.__v!=null?j.__v:cloudVersion);migrate();save();refresh();} // mahalliy o'zgarish bor — birlashtiramiz (yo'qotmaymiz)
+        if(dirty){pushNow();}                                       // mahalliy o'zgarish (jumladan O'CHIRISH) bor — serverga yozamiz, serverdan tortmaymiz (o'chirish yo'qolmasin)
         else{const openId=document.getElementById('overlay').classList.contains('open');DB=j;migrate();if(!openId)refresh();}
       }}}catch(e){}
 },10000);}
@@ -1283,6 +1283,7 @@ function startApp(){
   if(currentUser.role==='owner'){side.style.display='none';document.querySelector('.mobtop').style.display='none';ownerHome();return;}
   side.style.display='';
   if(window.innerWidth<=860)document.querySelector('.mobtop').style.display='flex';else document.querySelector('.mobtop').style.display='';
+  if(currentUser.role==='smm'){const mp=DB.projects.find(p=>(p.team||[]).includes(currentUser.id)||p.ownerId===currentUser.id);if(mp)cFilter=mp.id;} // SMM menejerga o'z loyihasi default ko'rinadi
   renderNav();go(firstPage());
 }
 function ownerHome(){
