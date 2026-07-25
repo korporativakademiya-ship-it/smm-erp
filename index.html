@@ -418,8 +418,8 @@ async function pushNow(){if(!CLOUD)return;
     DB.updatedAt=new Date().toISOString();
     DB.__v=(cloudVersion==null?0:cloudVersion);                     // biz asoslangan versiya (optimistik konkurentlik)
     const body=JSON.stringify(DB);lastPush=stable(DB);
-    if(body.length>45000&&!sizeWarned){sizeWarned=true;             // 50k bitta-katak limitiga yaqin
-      try{alert('⚠️ Baza hajmi '+Math.round(body.length/1024)+' KB — Google Sheets bitta katak limiti (50 KB) ga yaqinlashdi. «Backend v2» (alohida listlar) ga o‘tish tavsiya etiladi (JOYLASH_YORIQNOMASI.md).');}catch(_){}}
+    if(body.length>8000000&&!sizeWarned){sizeWarned=true;          // Backend v2: ko'p qatorli saqlash — bitta-katak limiti YO'Q; faqat juda katta hajmda ogohlantiramiz
+      try{alert('⚠️ Baza hajmi '+Math.round(body.length/1024/1024*10)/10+' MB — ancha katta. Eski ma‘lumotlarni vaqti-vaqti bilan eksport/arxiv qilib turing.');}catch(_){}}
     const r=await fetch(SHEET_API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body});
     let res=null;try{res=JSON.parse(await r.text());}catch(_){}
     if(res&&res.conflict&&res.db&&validDB(res.db)){                 // v2 server: eski versiya rad etildi — birlashtiramiz
